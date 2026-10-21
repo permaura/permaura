@@ -1,0 +1,70 @@
+/*
+ * @permaura/ui design tokens. Security-grade, calm, trustworthy, dark by default. These CSS custom properties back every component in the package; the Tauri apps and the web console import this file once and the components inherit. Override any token at :root (or a scoped container) to re-theme.
+ *
+ * The palette leans on a near-black slate canvas with a single cool accent, plus four risk colours that map directly to the RiskTier enum (low / medium / high / critical) and three decision colours (allow / deny / requires_approval).
+ */
+
+:root,
+.permaura {
+  /* Surfaces, dark by default. */
+  --bst-bg: #0a0d12;
+  --bst-surface: #11151c;
+  --bst-surface-2: #161b24;
+  --bst-border: #232a36;
+  --bst-border-strong: #313a49;
+
+  /* Text. */
+  --bst-fg: #e6eaf2;
+  --bst-fg-muted: #9aa4b2;
+  --bst-fg-subtle: #6b7484;
+
+  /* Brand accent. */
+  --bst-accent: #4f8cff;
+  --bst-accent-fg: #ffffff;
+  --bst-accent-soft: rgba(79, 140, 255, 0.14);
+
+  /* Risk tiers: keep in lockstep with RiskTier. */
+  --bst-risk-low: #3fb37f;
+  --bst-risk-low-soft: rgba(63, 179, 127, 0.14);
+  --bst-risk-medium: #d6a335;
+  --bst-risk-medium-soft: rgba(214, 163, 53, 0.14);
+  --bst-risk-high: #e8803a;
+  --bst-risk-high-soft: rgba(232, 128, 58, 0.14);
+  --bst-risk-critical: #e5484d;
+  --bst-risk-critical-soft: rgba(229, 72, 77, 0.16);
+
+  /* Decisions. */
+  --bst-allow: #3fb37f;
+  --bst-allow-soft: rgba(63, 179, 127, 0.14);
+  --bst-deny: #e5484d;
+  --bst-deny-soft: rgba(229, 72, 77, 0.16);
+  --bst-approval: #d6a335;
+  --bst-approval-soft: rgba(214, 163, 53, 0.14);
+
+  /* Status dots. */
+  --bst-status-online: #3fb37f;
+  --bst-status-pending: #d6a335;
+  --bst-status-offline: #6b7484;
+  --bst-status-error: #e5484d;
+
+  /* Shape & type. */
+  --bst-radius: 8px;
+  --bst-radius-sm: 6px;
+  --bst-radius-lg: 12px;
+  --bst-font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --bst-font-mono: ui-monospace, "SF Mono", "JetBrains Mono", "Fira Code", monospace;
+  --bst-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.24);
+}
+
+/* Opt-in light theme: set data-theme="light" on a container. */
+[data-theme="light"] {
+  --bst-bg: #f7f8fa;
+  --bst-surface: #ffffff;
+  --bst-surface-2: #f1f3f6;
+  --bst-border: #e2e6ec;
+  --bst-border-strong: #cdd3dc;
+  --bst-fg: #11151c;
+  --bst-fg-muted: #4a5462;
+  --bst-fg-subtle: #79828f;
+  --bst-shadow: 0 1px 2px rgba(16, 21, 28, 0.06), 0 8px 24px rgba(16, 21, 28, 0.08);
+}

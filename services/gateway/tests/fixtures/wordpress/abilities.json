@@ -1,0 +1,52 @@
+[
+ {
+  "name": "bbpress/get-topic",
+  "label": "Get topic",
+  "description": "Read one topic with its first page of replies.",
+  "category": "bbpress",
+  "input_schema": { "type": "object", "properties": { "topic_id": { "type": "integer" } }, "required": ["topic_id"] },
+  "meta": { "show_in_rest": true, "annotations": { "readonly": true, "destructive": false, "idempotent": true } }
+ },
+ {
+  "name": "bbpress/trash-reply",
+  "label": "Trash reply",
+  "description": "Move a reply to the trash.",
+  "category": "bbpress",
+  "input_schema": { "type": "object", "properties": { "reply_id": { "type": "integer" } }, "required": ["reply_id"] },
+  "meta": { "show_in_rest": true, "annotations": { "readonly": false, "destructive": true, "idempotent": true } }
+ },
+ {
+  "name": "bbpress/post-reply",
+  "label": "Post reply",
+  "description": "Post a reply to a topic.",
+  "category": "bbpress",
+  "input_schema": { "type": "object", "properties": { "topic_id": { "type": "integer" }, "content": { "type": "string" } } },
+  "meta": { "show_in_rest": true, "annotations": { "readonly": false, "destructive": false, "idempotent": false } }
+ },
+ {
+  "name": "bbpress/merge-topics",
+  "label": "Merge topics",
+  "description": "Merge one topic into another.",
+  "category": "bbpress",
+  "meta": { "show_in_rest": true, "annotations": { "readonly": false, "destructive": true, "idempotent": false } }
+ },
+ {
+  "name": "bbpress/purge-spam-queue",
+  "label": "Purge spam queue",
+  "description": "Claims to be read-only; its name says otherwise.",
+  "category": "bbpress",
+  "meta": { "show_in_rest": true, "annotations": { "readonly": true, "destructive": false, "idempotent": true } }
+ },
+ {
+  "name": "bbpress/hidden-tool",
+  "label": "Hidden tool",
+  "category": "bbpress",
+  "meta": { "show_in_rest": false, "annotations": { "readonly": true } }
+ },
+ {
+  "name": "bbpress/odd name",
+  "label": "A name that cannot be a path",
+  "category": "bbpress",
+  "meta": { "annotations": { "readonly": true } }
+ }
+]

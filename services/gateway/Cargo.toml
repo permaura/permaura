@@ -1,0 +1,109 @@
+[package]
+name = "permaura-gateway"
+description = "Permaura: the axum enforcement runtime (REST v1 + MCP JSON-RPC, deny-by-default, hash-chained audit) plus the `permaura` operator CLI that drives it."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+# The crate is usable both as a library (build_router + AppState, reused by the
+# daemon) and as a standalone binary (the hosted gateway).
+[lib]
+name = "permaura_gateway"
+path = "src/lib.rs"
+
+# ONE binary, `permaura`, with the whole operator surface behind subcommands: `start` runs the
+# gateway, the rest drive one. It was two (`permaura-gateway` with no subcommands, published; `perma`
+# with the full CLI, published nowhere), which is why the shipped artifact could not do half of what
+# the docs described.
+[[bin]]
+name = "permaura"
+path = "src/main.rs"
+
+[features]
+# The shipped gateway persists (SQLite at ~/.permaura/gateway.db) and has the real SSH/SFTP
+# transport compiled in, both ON by default so an end user's install just works. Build with
+# `--no-default-features` for a pure in-memory, SSH-less dev binary.
+default = ["sqlite", "ssh-transport"]
+sqlite = ["dep:rusqlite"]
+# The real SSH/SFTP transport (russh) for CapabilityKind::Ssh. In `default` so it ships enabled;
+# drop it with `--no-default-features` for a dev build that has no SSH dependency (SSH then uses the
+# mock transport). Whether the runtime USES the real transport is the `--mock` flag, not this feature.
+ssh-transport = ["permaura-connectors/ssh-transport"]
+
+[dependencies]
+permaura-core = { workspace = true }
+# Children that die with the gateway, and the one-writer lock on a self-run store (`store::lock`): the platform crate keeps the FFI both need.
+permaura-platform = { workspace = true, features = ["child", "lock"] }
+argon2 = { workspace = true }
+# The gateway's OWN vault-KEK custody. Windows Credential Manager is enabled because it needs
+# neither a signature nor a reachable daemon; macOS Keychain is enabled so the custody layer can take
+# it the moment the release pipeline signs this binary with a Developer ID. Until then its
+# code-identity probe answers no and the KEK stays in the owner-only file. Linux Secret Service is
+# deliberately NOT enabled: it reaches libdbus (a C library) and both Linux targets here are STATIC
+# musl, and the pure-Rust alternative blocks a future while `async fn main`'s runtime is up.
+permaura-credential-store = { workspace = true, features = ["apple-native", "windows-native"] }
+# Reads ~/.permaura/config.toml (see src/config.rs). `parse` only: nothing here builds a whole
+# config from a struct.
+toml = { version = "0.8", default-features = false, features = ["parse"] }
+# `permaura remote enable` DOES write config.toml, into a file the operator owns and has commented.
+# Serialising the struct back would hand their file to them rewritten as ours, so the
+# format-preserving editor earns its place: set the keys it owns, leave everything else untouched.
+toml_edit = "0.22"
+permaura-policy = { workspace = true }
+# Depended on per the architecture even though the gateway ships its own self-contained
+# HTTP-client + connector layer (mirroring the documented connector shape) so it runs offline.
+permaura-connectors = { workspace = true }
+# The relay protocol (the worker dial-out client).
+permaura-relay = { workspace = true }
+
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = "0.9"
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+libc = "0.2"
+async-trait = { workspace = true }
+time = { workspace = true }
+# The binary's whole command surface: subcommands, and `start`'s posture flags (posture is chosen
+# by flag, not env): --mock / --demo / --addr.
+clap = { workspace = true }
+# `vault add` reads a secret from a masked prompt when it is not given a source, so the value is
+# never an argument and never echoed.
+rpassword = { workspace = true }
+
+tokio = { workspace = true }
+axum = { workspace = true }
+# `delivery.rs` implements the response body trait itself, and axum re-exports the trait but not its frame and size-hint types.
+http-body = "1"
+tower = { workspace = true }
+tower-http = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+reqwest = { workspace = true }
+sha2 = { workspace = true }
+
+# Who holds the gateway's port, and how to remove them: `listeners` answers port to pid (lsof-equivalent
+# on macOS, procfs on Linux, GetExtendedTcpTable on Windows), `sysinfo` delivers the TERM. The same
+# pair the desktop app uses for the same job, so the two halves of the product name the same process.
+listeners = "0.6.0"
+# Held at 0.38 because 0.39 declares rust-version 1.95, above the workspace floor the README promises source builders.
+sysinfo = { version = "0.38", default-features = false, features = ["system"] }
+
+# Relay worker dial-out client.
+tokio-tungstenite = { workspace = true }
+futures-util = { workspace = true }
+ed25519-dalek = { workspace = true }
+base64 = { workspace = true }
+rand = { workspace = true }
+zeroize = { workspace = true }
+
+rusqlite = { workspace = true, optional = true }
+
+[dev-dependencies]
+syn = { version = "2", features = ["full", "visit"] }
+tower = { workspace = true }
+permaura-connectors = { workspace = true, features = ["test-support"] }

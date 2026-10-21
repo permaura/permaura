@@ -1,0 +1,46 @@
+{
+  "$comment": "An illustration of a generic-HTTP template's shape for Braintree. The Permaura gateway does not load this file; see README.md for the paths it does support. The secret is referenced by name, never embedded here.",
+  "integration": "braintree",
+  "display_name": "Braintree Production",
+  "base_url": "https://api.braintreegateway.com",
+  "auth": {
+    "type": "api_key",
+    "secret_ref": "braintree_production",
+    "$comment": "secret_ref names a secret by id rather than holding its value."
+  },
+  "capabilities": [
+    {
+      "id": "transactions.search",
+      "risk": "medium",
+      "match": { "method": "GET", "path": "/transactions" }
+    },
+    {
+      "id": "transactions.read",
+      "risk": "medium",
+      "match": { "method": "GET", "path": "/transactions/*" }
+    },
+    {
+      "id": "customers.read",
+      "risk": "medium",
+      "match": { "method": "GET", "path": "/customers/*" }
+    },
+    {
+      "id": "transactions.refund",
+      "risk": "critical",
+      "requires_approval": true,
+      "match": { "method": "POST", "path": "/transactions/*/refund" }
+    }
+  ],
+  "deny": [
+    { "method": "POST", "path": "/transactions/*/void" },
+    { "method": "DELETE", "path": "*" }
+  ],
+  "redact_fields": [
+    "card_number",
+    "cvv",
+    "billing_address",
+    "customer_email",
+    "payment_method_token"
+  ],
+  "execution_location": "local_only"
+}

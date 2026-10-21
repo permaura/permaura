@@ -1,0 +1,38 @@
+[package]
+name = "permaura-core"
+description = "Permaura security core: model, crypto, audit, vault, capabilities, redaction."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+permaura-platform = { workspace = true }
+serde = { workspace = true }
+# `raw_value` keeps a document as its text (`JsonText`) instead of a tree.
+serde_json = { workspace = true, features = ["raw_value"] }
+thiserror = { workspace = true }
+time = { workspace = true }
+
+# Crypto. The `zeroize` features make the ciphers wipe their key schedules, and Argon2 its working state, on drop;
+# `aes`, `ghash`, `polyval`, `chacha20` and `poly1305` are listed only to switch theirs on.
+aes-gcm = { workspace = true, features = ["zeroize"] }
+chacha20poly1305 = { workspace = true }
+argon2 = { workspace = true, features = ["zeroize"] }
+aes = { version = "0.8", features = ["zeroize"] }
+ghash = { version = "0.5", features = ["zeroize"] }
+polyval = { version = "0.6", features = ["zeroize"] }
+chacha20 = { version = "0.9", features = ["zeroize"] }
+poly1305 = { version = "0.8", features = ["zeroize"] }
+ed25519-dalek = { workspace = true }
+sha2 = { workspace = true }
+base64 = { workspace = true }
+rand = { workspace = true }
+rand_core = { workspace = true }
+zeroize = { workspace = true }
+
+# Home-directory resolution for the shared `~/.permaura` location. `dirs::home_dir()` reads $HOME on
+# Unix and the user profile (USERPROFILE) on Windows, so one call resolves the same path on every OS.
+dirs = "5"

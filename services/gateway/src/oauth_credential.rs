@@ -1,0 +1,249 @@
+//! OAuth connector credentials: the zero-knowledge refresh core.
+//!
+//! For a **Layer 3 (BYO app)** or **Layer 2 (PKCE)** connection, the gateway holds the OAuth token
+//! bundle (and, for Layer 3, the client id/secret) and refreshes the access token **itself**: the
+//! credential never leaves the worker, and permaura.com is not involved. The refreshed access token
+//! is then injected via the connection's existing `AuthScheme::Bearer`, so the connector request path
+//! is unchanged; only custody + refresh differ.
+//!
+//! A `Layer 1 (Managed)` connection does not use this path: permaura.com holds the refresh token and
+//! hands the gateway a short-lived access token, so the gateway just uses it directly.
+
+use permaura_core::SecretString;
+use serde::{Deserialize, Serialize};
+
+use crate::connectors::{HttpClient, HttpRequest};
+use crate::error::GatewayError;
+
+/// Which custody layer minted this credential. Drives whether the gateway refreshes
+/// locally (`Pkce` / `ByoApp`) or treats the token as externally-managed (`Managed`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OAuthLayer {
+    /// permaura.com holds the refresh token; the gateway gets a short-lived access token. No local refresh.
+    Managed,
+    /// Permaura's public app, PKCE; the gateway holds + refreshes the tokens (no client secret).
+    Pkce,
+    /// The user's own app; the gateway holds the client id/secret + tokens and refreshes locally.
+    #[default]
+    ByoApp,
+}
+
+/// A connection's OAuth credential, stored sealed (the same vault path as an API key). The access
+/// token is what gets injected upstream; the rest is what the gateway needs to keep it fresh.
+///
+/// The access token, the refresh token and the client secret are [`SecretString`]s: wiped when the
+/// credential drops, never printed by `Debug`, and read from the sealed bundle's raw text into a wiping
+/// buffer, escaped or not. It is read only from a serde_json slice (`from_sealed_bytes`), which that needs.
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct OAuthCredential {
+    /// Which custody layer this credential belongs to.
+    #[serde(default)]
+    pub layer: OAuthLayer,
+    /// The provider key (e.g. `github`, `google`), for display + provider-specific quirks.
+    pub provider: String,
+    /// The current access token (injected as a Bearer).
+    #[serde(deserialize_with = "permaura_core::secret::unescaped::deserialize")]
+    pub access_token: SecretString,
+    /// The refresh token, when the provider issued one. Absent → the gateway can't refresh.
+    #[serde(default, deserialize_with = "permaura_core::secret::unescaped::option")]
+    pub refresh_token: Option<SecretString>,
+    /// Unix-millisecond expiry of the access token. `0` = unknown (treat as non-expiring).
+    #[serde(default)]
+    pub expires_at: i64,
+    /// Granted scopes (informational + for re-auth diffing).
+    #[serde(default)]
+    pub scopes: Vec<String>,
+    /// The provider's token endpoint, used to refresh.
+    pub token_url: String,
+    /// The OAuth client id (Layer 2/3). `None` for a Managed credential.
+    #[serde(default)]
+    pub client_id: Option<String>,
+    /// The OAuth client secret (Layer 3 confidential app). `None` for PKCE (public client) / Managed.
+    #[serde(default, deserialize_with = "permaura_core::secret::unescaped::option")]
+    pub client_secret: Option<SecretString>,
+}
+
+impl std::fmt::Debug for OAuthCredential {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OAuthCredential")
+            .field("layer", &self.layer)
+            .field("provider", &self.provider)
+            .field("expires_at", &self.expires_at)
+            .field("scopes", &self.scopes)
+            .field("token_url", &self.token_url)
+            .field("client_id", &self.client_id)
+            .field("refresh_token", &self.refresh_token.is_some())
+            .field("client_secret", &self.client_secret.is_some())
+            .finish_non_exhaustive()
+    }
+}
+
+impl OAuthCredential {
+    /// True if the access token is at or within `skew_ms` of expiry. `expires_at == 0` (unknown /
+    /// non-expiring) is treated as fresh.
+    pub fn needs_refresh(&self, now_ms: i64, skew_ms: i64) -> bool {
+        self.expires_at != 0 && now_ms.saturating_add(skew_ms) >= self.expires_at
+    }
+
+    /// Can this credential be refreshed locally by the gateway? (Has a refresh token, and isn't a
+    /// Managed credential: those are refreshed by permaura.com.)
+    pub fn is_locally_refreshable(&self) -> bool {
+        self.layer != OAuthLayer::Managed && self.refresh_token.is_some()
+    }
+}
+
+/// What the provider's token endpoint returns on a refresh.
+#[derive(Deserialize)]
+struct TokenResponse {
+    #[serde(deserialize_with = "permaura_core::secret::unescaped::deserialize")]
+    access_token: SecretString,
+    /// Some providers rotate the refresh token on every refresh: persist it or the next refresh fails.
+    #[serde(default, deserialize_with = "permaura_core::secret::unescaped::option")]
+    refresh_token: Option<SecretString>,
+    /// Seconds until the new access token expires.
+    #[serde(default)]
+    expires_in: Option<i64>,
+}
+
+/// Ensure a fresh access token for `cred`. Returns the token to use and, when the credential changed,
+/// `Some(updated)` so the caller **persists** it: this is how a rotated refresh token survives.
+///
+/// Refreshes only when the token is near expiry **and** the credential is locally refreshable. A
+/// Managed credential, or one with no refresh token, is returned as-is (a dead Managed/expired token
+/// then fails the connector call, flipping the connection to `needs_reauth` upstream).
+pub async fn ensure_fresh(
+    cred: &OAuthCredential,
+    http: &dyn HttpClient,
+    now_ms: i64,
+    skew_ms: i64,
+) -> Result<(SecretString, Option<OAuthCredential>), GatewayError> {
+    if !cred.needs_refresh(now_ms, skew_ms) || !cred.is_locally_refreshable() {
+        return Ok((cred.access_token.clone(), None));
+    }
+    let refresh_token = cred.refresh_token.as_ref().expect("is_locally_refreshable checked Some");
+
+    // RFC 6749 §6: the token endpoint takes an `application/x-www-form-urlencoded` body. Google,
+    // Xero, Slack, Dropbox and GitHub all reject a JSON one, so this must be form-encoded.
+    let mut params = std::collections::BTreeMap::new();
+    params.insert("grant_type".to_string(), "refresh_token".to_string());
+    params.insert("refresh_token".to_string(), refresh_token.expose().to_string());
+    if let Some(cid) = &cred.client_id {
+        params.insert("client_id".to_string(), cid.clone());
+    }
+    if let Some(sec) = &cred.client_secret {
+        params.insert("client_secret".to_string(), sec.expose().to_string());
+    }
+    let req = HttpRequest::post(cred.token_url.clone())
+        .header("Accept", "application/json")
+        .form_body(params)
+        .credentialed();
+
+    let resp = http
+        .send_secret(req)
+        .await
+        .map_err(|e| GatewayError::upstream("oauth refresh request failed", &e))?;
+    if resp.status >= 400 {
+        // Expired/revoked refresh token, bad client creds, etc. The caller marks the connection
+        // needs_reauth; we surface a clear error rather than returning a stale token.
+        return Err(GatewayError::Unauthorized(format!(
+            "oauth refresh denied ({}) for provider '{}'",
+            resp.status, cred.provider
+        )));
+    }
+    let token: TokenResponse = serde_json::from_slice(&resp.body)
+        .map_err(|e| GatewayError::Internal(format!("oauth refresh: bad token response: {e}")))?;
+    drop(resp);
+
+    let mut updated = cred.clone();
+    updated.access_token = token.access_token.clone();
+    if let Some(rotated) = token.refresh_token {
+        updated.refresh_token = Some(rotated); // honour rotation
+    }
+    updated.expires_at = match token.expires_in {
+        Some(secs) if secs > 0 => now_ms.saturating_add(secs.saturating_mul(1000)),
+        _ => 0,
+    };
+    Ok((token.access_token, Some(updated)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The type-level pin for what this module reads: these stop compiling if a secret member stops being a wiping type.
+    #[allow(dead_code)]
+    fn secret_members_are_wiping_types<'a>(t: &'a TokenResponse, c: &'a OAuthCredential) -> [Option<&'a SecretString>; 5] {
+        [Some(&t.access_token), t.refresh_token.as_ref(), Some(&c.access_token), c.refresh_token.as_ref(), c.client_secret.as_ref()]
+    }
+    use crate::connectors::{HttpResponse, MockHttpClient};
+
+    fn cred(expires_at: i64, refresh: Option<&str>, layer: OAuthLayer) -> OAuthCredential {
+        OAuthCredential {
+            layer,
+            provider: "github".into(),
+            access_token: "old_access".into(),
+            refresh_token: refresh.map(|s| s.into()),
+            expires_at,
+            scopes: vec!["repo".into()],
+            token_url: "https://github.com/login/oauth/access_token".into(),
+            client_id: Some("cid".into()),
+            client_secret: Some("csec".into()),
+        }
+    }
+
+    #[tokio::test]
+    async fn fresh_token_is_returned_without_refreshing() {
+        let http = MockHttpClient::new(); // no responses queued: a refresh would panic/error
+        let c = cred(10_000_000, Some("rt"), OAuthLayer::ByoApp);
+        let (tok, updated) = ensure_fresh(&c, &http, 1_000, 60_000).await.unwrap();
+        assert_eq!(tok, "old_access");
+        assert!(updated.is_none());
+    }
+
+    #[tokio::test]
+    async fn near_expiry_refreshes_and_rotates_the_refresh_token() {
+        let http = MockHttpClient::new();
+        http.push_response(HttpResponse::json(
+            200,
+            serde_json::json!({ "access_token": "new_access", "refresh_token": "rotated_rt", "expires_in": 3600 }),
+        ));
+        // now=1_000_000, expires at 1_010_000, skew 60_000 → within skew → refresh.
+        let c = cred(1_010_000, Some("old_rt"), OAuthLayer::ByoApp);
+        let (tok, updated) = ensure_fresh(&c, &http, 1_000_000, 60_000).await.unwrap();
+        assert_eq!(tok, "new_access");
+        let updated = updated.expect("credential changed");
+        assert_eq!(updated.access_token, "new_access");
+        assert_eq!(updated.refresh_token.as_ref().map(SecretString::expose), Some("rotated_rt"), "rotation must be persisted");
+        assert_eq!(updated.expires_at, 1_000_000 + 3_600_000);
+    }
+
+    #[tokio::test]
+    async fn managed_credential_is_never_refreshed_locally() {
+        let http = MockHttpClient::new();
+        let c = cred(1, Some("rt"), OAuthLayer::Managed); // expired, but Managed → permaura.com refreshes
+        let (tok, updated) = ensure_fresh(&c, &http, 1_000_000, 60_000).await.unwrap();
+        assert_eq!(tok, "old_access");
+        assert!(updated.is_none());
+    }
+
+    #[tokio::test]
+    async fn no_refresh_token_returns_current_token() {
+        let http = MockHttpClient::new();
+        let c = cred(1, None, OAuthLayer::ByoApp); // expired, no refresh token
+        let (tok, updated) = ensure_fresh(&c, &http, 1_000_000, 60_000).await.unwrap();
+        assert_eq!(tok, "old_access");
+        assert!(updated.is_none());
+    }
+
+    #[tokio::test]
+    async fn refresh_denied_is_unauthorized() {
+        let http = MockHttpClient::new();
+        http.push_response(HttpResponse::json(401, serde_json::json!({ "error": "bad_refresh_token" })));
+        let c = cred(1, Some("dead_rt"), OAuthLayer::ByoApp);
+        assert!(matches!(
+            ensure_fresh(&c, &http, 1_000_000, 60_000).await.unwrap_err(),
+            GatewayError::Unauthorized(_)
+        ));
+    }
+}

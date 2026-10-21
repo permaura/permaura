@@ -1,0 +1,45 @@
+{
+  "name": "@permaura/ui",
+  "version": "0.1.0",
+  "description": "Shared security-grade React components for the Permaura console and Tauri apps: RiskBadge, DecisionBadge, ApprovalCard, AuditRow, StatusDot, plus design tokens.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pixelitemedia/permaura.git",
+    "directory": "packages/ui"
+  },
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./tokens.css": "./dist/tokens.css",
+    "./styles.css": "./dist/tokens.css"
+  },
+  "files": ["dist", "src", "README.md"],
+  "scripts": {
+    "build": "tsup && cp src/tokens.css dist/tokens.css",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "peerDependencies": {
+    "react": ">=18",
+    "react-dom": ">=18"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "tsup": "^8.3.0",
+    "typescript": "^5.6.3"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

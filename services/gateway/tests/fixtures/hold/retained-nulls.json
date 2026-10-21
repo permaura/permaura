@@ -1,0 +1,14 @@
+{
+  "hold_version": 1,
+  "retained": {
+    "approval_floor": null,
+    "pre_restore_audit_epoch": null,
+    "pre_restore_audit_head_hash": null,
+    "pre_restore_audit_head_seq": null,
+    "pre_restore_commit_seq": null,
+    "refreshed_at": "2026-09-20T13:58:02Z",
+    "replay_floor_ms": null,
+    "revocation_journal_head": null
+  },
+  "tenant": "acme"
+}

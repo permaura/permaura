@@ -1,0 +1,235 @@
+# Permaura marketplace presets: the ship-first tier-1 ten.
+#
+# Each entry is pre-verified import arguments, loaded by services/gateway/src/presets.rs into the
+# same Capability/HttpSpec the OpenAPI importer produces. Only the HTTP shape is required per
+# capability; action/risk/approval default from openapi::classify (refund/charge/delete/POST -> High
+# or Critical + approval), and reads (GET -> Medium) stay enabled while writes start disabled. A
+# line may override `action`, `risk`, `requires_approval`, or `disabled`.
+#
+# method: GET|POST|PUT|PATCH|DELETE   risk: low|medium|high|critical
+# auth.scheme: bearer | basic | api_key_header | api_key_query | raw
+# body_style: json (default) | form. Preset-wide, and a capability line may override it. form sends
+#   application/x-www-form-urlencoded with nested values in bracket syntax (metadata[order]=1042).
+# logo: a Simple Icons slug (rendered in the console). brand_color: the brand hex.
+# oauth: present when the connector also supports OAuth (PKCE / BYO app / Managed). Whether the
+#   hosted *Managed* layer is offered is a separate web-side flag (managed_oauth_provider), so a
+#   connector can advertise OAuth while we are still standing up its hosted app. pkce: true means the
+#   zero-knowledge "Permaura app" layer is possible (public client, no secret).
+# Paths are quoted because `{id}` braces are flow-mapping syntax in YAML.
+# The secret is referenced by id and injected server-side, never present here.
+
+- id: stripe
+  name: Stripe
+  vertical: payments
+  description: Read charges, customers, invoices and subscriptions.
+  base_url: https://api.stripe.com/v1
+  logo: stripe
+  brand_color: "#635BFF"
+  auth: { scheme: basic, key_as_username: true }
+  static_headers: { Stripe-Version: "2024-06-20" }
+  body_style: form
+  redact_fields: [card.number, cvc, exp_month, exp_year, address, email, phone, client_secret, customer_email, customer_phone, customer_address, customer_shipping, receipt_email]
+  capabilities:
+    - { id: charges.list, method: GET, path: "/charges", query_params: [limit, starting_after], description: List charges }
+    - { id: charges.read, method: GET, path: "/charges/{id}", path_params: [id], description: Retrieve a charge }
+    - { id: customers.list, method: GET, path: "/customers", query_params: [limit], description: List customers }
+    - { id: customers.read, method: GET, path: "/customers/{id}", path_params: [id], description: Retrieve a customer }
+    - { id: invoices.list, method: GET, path: "/invoices", query_params: [limit], description: List invoices }
+    - { id: subscriptions.list, method: GET, path: "/subscriptions", query_params: [limit], description: List subscriptions }
+    - { id: balance.read, method: GET, path: "/balance", description: Read account balance }
+    - { id: refunds.create, method: POST, path: "/refunds", body_params: [charge, amount, reason], description: Refund a charge }
+    - { id: payment_intents.capture, method: POST, path: "/payment_intents/{id}/capture", path_params: [id], description: Capture a payment intent }
+    - { id: payouts.create, method: POST, path: "/payouts", body_params: [amount, currency], description: Create a payout }
+    - { id: customers.delete, method: DELETE, path: "/customers/{id}", path_params: [id], description: Delete a customer }
+
+- id: github
+  name: GitHub
+  vertical: devtools
+  description: Read repos, issues, pull requests and commits.
+  base_url: https://api.github.com
+  logo: github
+  brand_color: "#181717"
+  auth: { scheme: bearer }
+  static_headers: { Accept: "application/vnd.github+json", X-GitHub-Api-Version: "2022-11-28" }
+  oauth:
+    authorize_url: https://github.com/login/oauth/authorize
+    token_url: https://github.com/login/oauth/access_token
+    scopes: [repo, read:org]
+    pkce: false
+  capabilities:
+    - { id: repos.read, method: GET, path: "/repos/{owner}/{repo}", path_params: [owner, repo], description: Read repository metadata }
+    - { id: issues.list, method: GET, path: "/repos/{owner}/{repo}/issues", path_params: [owner, repo], query_params: [state, labels], description: List issues }
+    - { id: pull_requests.list, method: GET, path: "/repos/{owner}/{repo}/pulls", path_params: [owner, repo], query_params: [state], description: List pull requests }
+    - { id: commits.list, method: GET, path: "/repos/{owner}/{repo}/commits", path_params: [owner, repo], description: List commits }
+    - { id: search.repos, method: GET, path: "/search/repositories", query_params: [q, sort], description: Search repositories }
+    - { id: issues.create, method: POST, path: "/repos/{owner}/{repo}/issues", path_params: [owner, repo], body_params: [title, body, labels], description: Open an issue }
+    - { id: pull_requests.create, method: POST, path: "/repos/{owner}/{repo}/pulls", path_params: [owner, repo], body_params: [title, head, base, body], description: Open a pull request }
+    - { id: pull_requests.merge, method: PUT, path: "/repos/{owner}/{repo}/pulls/{pull_number}/merge", path_params: [owner, repo, pull_number], body_params: [merge_method], risk: critical, description: Merge a pull request }
+    - { id: repos.delete, method: DELETE, path: "/repos/{owner}/{repo}", path_params: [owner, repo], description: Delete a repository }
+
+- id: slack
+  name: Slack
+  vertical: comms
+  description: List channels, read history and search messages.
+  base_url: https://slack.com/api
+  logo: slack
+  brand_color: "#4A154B"
+  auth: { scheme: bearer }
+  # A bare name matches that key at any depth, so `email` covers users.list's members[].profile.email.
+  redact_fields: [email, phone, skype]
+  oauth:
+    authorize_url: https://slack.com/oauth/v2/authorize
+    token_url: https://slack.com/api/oauth.v2.access
+    scopes: [channels:read, channels:history, chat:write, users:read]
+    pkce: false
+  capabilities:
+    - { id: conversations.list, method: GET, path: "/conversations.list", query_params: [types, limit], description: List conversations }
+    - { id: conversations.history, method: GET, path: "/conversations.history", query_params: [channel, limit], description: Read channel history }
+    - { id: users.list, method: GET, path: "/users.list", query_params: [limit], description: List users }
+    - { id: search.messages, method: GET, path: "/search.messages", query_params: [query, count], description: Search messages }
+    - { id: chat.postMessage, method: POST, path: "/chat.postMessage", body_params: [channel, text, blocks], description: Post a message }
+    - { id: chat.delete, method: POST, path: "/chat.delete", body_params: [channel, ts], action: delete, risk: critical, description: Delete a message }
+    - { id: conversations.archive, method: POST, path: "/conversations.archive", body_params: [channel], description: Archive a channel }
+
+- id: gmail
+  name: Gmail
+  vertical: comms
+  description: List and read messages, threads and labels.
+  base_url: https://gmail.googleapis.com/gmail/v1
+  logo: gmail
+  brand_color: "#EA4335"
+  auth: { scheme: bearer }
+  oauth:
+    authorize_url: https://accounts.google.com/o/oauth2/v2/auth
+    token_url: https://oauth2.googleapis.com/token
+    scopes: ["https://www.googleapis.com/auth/gmail.readonly", "https://www.googleapis.com/auth/gmail.send"]
+    pkce: true
+  capabilities:
+    - { id: messages.list, method: GET, path: "/users/me/messages", query_params: [q, maxResults], description: List messages }
+    - { id: messages.read, method: GET, path: "/users/me/messages/{id}", path_params: [id], description: Read a message }
+    - { id: threads.list, method: GET, path: "/users/me/threads", query_params: [q], description: List threads }
+    - { id: labels.list, method: GET, path: "/users/me/labels", description: List labels }
+    - { id: profile.read, method: GET, path: "/users/me/profile", description: Read the mailbox profile }
+    - { id: messages.send, method: POST, path: "/users/me/messages/send", body_params: [raw], action: send, description: Send a message }
+    - { id: messages.trash, method: POST, path: "/users/me/messages/{id}/trash", path_params: [id], action: delete, description: Move a message to trash }
+    - { id: messages.delete, method: DELETE, path: "/users/me/messages/{id}", path_params: [id], description: Permanently delete a message }
+
+- id: microsoft-graph
+  name: Microsoft Graph
+  vertical: comms
+  description: Read mail, users, calendar events and drive items.
+  base_url: https://graph.microsoft.com/v1.0
+  logo: microsoft
+  brand_color: "#5E5E5E"
+  auth: { scheme: bearer }
+  oauth:
+    authorize_url: https://login.microsoftonline.com/common/oauth2/v2.0/authorize
+    token_url: https://login.microsoftonline.com/common/oauth2/v2.0/token
+    scopes: ["Mail.Read", "User.Read", "offline_access"]
+    pkce: true
+  capabilities:
+    - { id: me.read, method: GET, path: "/me", description: Read the signed-in user }
+    - { id: messages.list, method: GET, path: "/me/messages", query_params: ["$top", "$filter"], description: List mail messages }
+    - { id: users.list, method: GET, path: "/users", query_params: ["$top"], description: List users }
+    - { id: events.list, method: GET, path: "/me/events", query_params: ["$top"], description: List calendar events }
+    - { id: drive.children, method: GET, path: "/me/drive/root/children", description: List drive items }
+    - { id: mail.send, method: POST, path: "/me/sendMail", body_params: [message, saveToSentItems], action: send, description: Send mail }
+    - { id: messages.delete, method: DELETE, path: "/me/messages/{id}", path_params: [id], description: Delete a mail message }
+    - { id: users.create, method: POST, path: "/users", body_params: [accountEnabled, displayName, userPrincipalName], description: Create a user }
+    - { id: events.create, method: POST, path: "/me/events", body_params: [subject, start, end, attendees], description: Create a calendar event }
+
+- id: vercel
+  name: Vercel
+  vertical: devtools
+  description: List deployments, projects, domains and env keys.
+  base_url: https://api.vercel.com
+  logo: vercel
+  brand_color: "#000000"
+  auth: { scheme: bearer }
+  capabilities:
+    - { id: deployments.list, method: GET, path: "/v6/deployments", query_params: [limit, projectId], description: List deployments }
+    - { id: projects.list, method: GET, path: "/v9/projects", description: List projects }
+    - { id: projects.read, method: GET, path: "/v9/projects/{id}", path_params: [id], description: Read a project }
+    - { id: domains.list, method: GET, path: "/v5/domains", description: List domains }
+    - { id: env.read, method: GET, path: "/v9/projects/{id}/env", path_params: [id], description: List env var keys (never values) }
+    - { id: deployments.create, method: POST, path: "/v13/deployments", body_params: [name, gitSource, target], action: deploy, description: Create a deployment }
+    - { id: env.create, method: POST, path: "/v10/projects/{id}/env", path_params: [id], body_params: [key, value, target, type], description: Add an env var }
+    - { id: projects.delete, method: DELETE, path: "/v9/projects/{id}", path_params: [id], description: Delete a project }
+
+- id: cloudflare
+  name: Cloudflare
+  vertical: devtools
+  description: List zones, DNS records and account analytics.
+  base_url: https://api.cloudflare.com/client/v4
+  logo: cloudflare
+  brand_color: "#F38020"
+  auth: { scheme: bearer }
+  capabilities:
+    - { id: zones.list, method: GET, path: "/zones", query_params: [name, status], description: List zones }
+    - { id: dns.list, method: GET, path: "/zones/{zone_id}/dns_records", path_params: [zone_id], query_params: [type, name], description: List DNS records }
+    - { id: user.read, method: GET, path: "/user", description: Read the API token's user }
+    - { id: dns.create, method: POST, path: "/zones/{zone_id}/dns_records", path_params: [zone_id], body_params: [type, name, content, ttl, proxied], description: Create a DNS record }
+    - { id: dns.delete, method: DELETE, path: "/zones/{zone_id}/dns_records/{id}", path_params: [zone_id, id], description: Delete a DNS record }
+    - { id: cache.purge, method: POST, path: "/zones/{zone_id}/purge_cache", path_params: [zone_id], body_params: [files, purge_everything], risk: critical, description: Purge cached content }
+    - { id: zones.delete, method: DELETE, path: "/zones/{zone_id}", path_params: [zone_id], description: Delete a zone }
+
+- id: linear
+  name: Linear
+  vertical: devtools
+  description: List issues, projects, teams and cycles (GraphQL).
+  base_url: https://api.linear.app/graphql
+  logo: linear
+  brand_color: "#5E6AD2"
+  auth: { scheme: raw, header: Authorization, prefix: "" }
+  oauth:
+    authorize_url: https://linear.app/oauth/authorize
+    token_url: https://api.linear.app/oauth/token
+    scopes: [read, write]
+    pkce: false
+  capabilities:
+    - { id: issues.list, method: POST, path: "/", body_params: [query, variables], action: list, risk: medium, graphql: { operation: query }, description: Query issues }
+    - { id: issue.read, method: POST, path: "/", body_params: [query, variables], action: read, risk: medium, graphql: { operation: query }, description: Read an issue }
+    - { id: projects.list, method: POST, path: "/", body_params: [query, variables], action: list, risk: medium, graphql: { operation: query }, description: Query projects }
+    - { id: issue.create, method: POST, path: "/", body_params: [query, variables], action: create, risk: high, graphql: { operation: mutation, root_fields: [issueCreate] }, description: Create an issue (mutation) }
+    - { id: issue.archive, method: POST, path: "/", body_params: [query, variables], action: delete, risk: critical, graphql: { operation: mutation, root_fields: [issueArchive] }, description: Archive an issue (mutation) }
+
+- id: hubspot
+  name: HubSpot
+  vertical: crm
+  description: List and search contacts, companies and deals.
+  base_url: https://api.hubapi.com
+  logo: hubspot
+  brand_color: "#FF7A59"
+  auth: { scheme: bearer }
+  oauth:
+    authorize_url: https://app.hubspot.com/oauth/authorize
+    token_url: https://api.hubapi.com/oauth/v1/token
+    scopes: ["crm.objects.contacts.read", "crm.objects.deals.read"]
+    pkce: false
+  capabilities:
+    - { id: contacts.list, method: GET, path: "/crm/v3/objects/contacts", query_params: [limit, after, properties], description: List contacts }
+    - { id: contacts.read, method: GET, path: "/crm/v3/objects/contacts/{id}", path_params: [id], description: Read a contact }
+    - { id: companies.list, method: GET, path: "/crm/v3/objects/companies", query_params: [limit, after], description: List companies }
+    - { id: deals.list, method: GET, path: "/crm/v3/objects/deals", query_params: [limit, after], description: List deals }
+    - { id: contacts.search, method: POST, path: "/crm/v3/objects/contacts/search", body_params: [filterGroups, query, limit], action: search, risk: medium, description: Search contacts }
+    - { id: contacts.create, method: POST, path: "/crm/v3/objects/contacts", body_params: [properties], description: Create a contact }
+    - { id: contacts.delete, method: DELETE, path: "/crm/v3/objects/contacts/{id}", path_params: [id], description: Delete a contact }
+    - { id: deals.delete, method: DELETE, path: "/crm/v3/objects/deals/{id}", path_params: [id], description: Delete a deal }
+
+- id: openai
+  name: OpenAI
+  vertical: data
+  description: List models, files, batches and fine-tunes.
+  base_url: https://api.openai.com/v1
+  logo: openai
+  brand_color: "#412991"
+  auth: { scheme: bearer }
+  capabilities:
+    - { id: models.list, method: GET, path: "/models", description: List models }
+    - { id: models.read, method: GET, path: "/models/{model}", path_params: [model], description: Read a model }
+    - { id: files.list, method: GET, path: "/files", query_params: [purpose], description: List files }
+    - { id: batches.list, method: GET, path: "/batches", query_params: [limit], description: List batches }
+    - { id: chat.completions.create, method: POST, path: "/chat/completions", body_params: [model, messages, temperature], description: Create a chat completion (spends credit) }
+    - { id: images.generate, method: POST, path: "/images/generations", body_params: [model, prompt, size], description: Generate an image (spends credit) }
+    - { id: fine_tunes.create, method: POST, path: "/fine_tuning/jobs", body_params: [model, training_file], description: Start a fine-tune }
+    - { id: files.delete, method: DELETE, path: "/files/{file_id}", path_params: [file_id], description: Delete a file }

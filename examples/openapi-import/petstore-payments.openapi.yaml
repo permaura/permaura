@@ -1,0 +1,153 @@
+# Sample OpenAPI spec for Permaura's OpenAPI importer (Permaura's Level 2 integration path).
+#
+# Permaura reads an OpenAPI document and turns each operation into a guarded capability. The operationId (or the method+path) becomes the capability id; the HTTP method, the path and the operationId suggest a normalized action and a default risk tier; and every high or critical capability is created switched off.
+#
+# This is a deliberately small "payments-ish" API that exercises every risk tier: a read (medium), an export (high), a write (high), and a refund + delete (critical). See README.md for the operation-to-capability mapping.
+
+openapi: 3.0.3
+info:
+  title: Example Payments API
+  version: "1.0.0"
+  description: A small sample API used to demonstrate how Permaura maps OpenAPI operations to capabilities.
+
+servers:
+  - url: https://api.example-payments.com/v1
+
+paths:
+  /transactions:
+    get:
+      operationId: searchTransactions
+      summary: Search transactions
+      # GET + collection → action "search", default risk: medium.
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [settled, failed, voided, authorized]
+        - name: date
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+      responses:
+        "200":
+          description: A page of transactions.
+
+  /transactions/{id}:
+    get:
+      operationId: readTransaction
+      summary: Read a transaction
+      # GET + item → action "read", default risk: medium.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: A single transaction.
+
+  /transactions/{id}/refund:
+    post:
+      operationId: refundTransaction
+      summary: Refund a transaction
+      # POST + .../refund → action "refund", default risk: CRITICAL, requires approval.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [amount, currency]
+              properties:
+                amount:
+                  type: number
+                  exclusiveMinimum: 0
+                currency:
+                  type: string
+                  minLength: 3
+                  maxLength: 3
+      responses:
+        "200":
+          description: Refund confirmation.
+
+  /customers:
+    get:
+      operationId: exportCustomers
+      summary: Export customers
+      # GET whose operationId says export → action "export", default risk: high (no size cap). A collection GET without "export" in its operationId is "search", medium.
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+      responses:
+        "200":
+          description: A page of customers.
+
+  /customers/{id}:
+    patch:
+      operationId: updateCustomer
+      summary: Update a customer
+      # PATCH/PUT → action "update", default risk: high (a write).
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email:
+                  type: string
+                  format: email
+                name:
+                  type: string
+      responses:
+        "200":
+          description: The updated customer.
+    delete:
+      operationId: deleteCustomer
+      summary: Delete a customer
+      # DELETE → action "delete", default risk: CRITICAL, requires approval.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted.
+
+components:
+  securitySchemes:
+    apiKey:
+      type: http
+      scheme: bearer
+      # Permaura binds this scheme to a vault secret reference at import time; the key value is never written into the imported capability definitions.
+
+security:
+  - apiKey: []

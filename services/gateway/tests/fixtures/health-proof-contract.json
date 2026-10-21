@@ -1,0 +1,44 @@
+[
+  {
+    "challenge": "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
+    "port": 7376,
+    "token": "pgc_cr01_contract_console_session_acknowledged",
+    "header": "X-Permaura-Console-Proof",
+    "expectedProof": "852c4c636997cafd3bd87ea42a8f5b796ceb1572adabf7968d6212b8514c1a64"
+  },
+  {
+    "challenge": "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
+    "port": 7376,
+    "token": "pgc_cr01_contract_console_session_pending",
+    "header": "X-Permaura-Console-Proof",
+    "expectedProof": "990535e6daacdcd427642786826e483314a49a8a1b13bdd22b82a97eeb4d214e"
+  },
+  {
+    "challenge": "f0e1d2c3b4a5968778695a4b3c2d1e0ff0e1d2c3b4a5968778695a4b3c2d1e0f",
+    "port": 7399,
+    "token": "pgc_cr01_contract_console_session_acknowledged",
+    "header": "X-Permaura-Console-Proof",
+    "expectedProof": "f7e45ca31a4f2da4287abfe27f0e8880198ddf6fd86f5b714da66026174a373e"
+  },
+  {
+    "challenge": "AbCdEf_-0123456789",
+    "port": 7376,
+    "token": "pgc_cr01_contract_console_session_acknowledged",
+    "header": "X-Permaura-Console-Proof",
+    "expectedProof": "d66b670cf61486a6010c68061272d64c0fb508931d111c3501e5d8102d99080f"
+  },
+  {
+    "challenge": "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
+    "port": 7376,
+    "token": "pgt_ag01testvectortoken",
+    "header": "X-Permaura-Proof",
+    "expectedProof": "4900eebce3ab46dfd1a9fa5d468d6f7021db4d73e4b37ba51fc75db2e223f767"
+  },
+  {
+    "challenge": "f0e1d2c3b4a5968778695a4b3c2d1e0ff0e1d2c3b4a5968778695a4b3c2d1e0f",
+    "port": 7399,
+    "token": "pgt_cr01_contract_operator_token",
+    "header": "X-Permaura-Proof",
+    "expectedProof": "cd7fc817797311bf9b7346be75851e4564afafe3e27113716692aa31e713d6e0"
+  }
+]

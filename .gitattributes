@@ -1,0 +1,23 @@
+# Line endings are content here, not formatting.
+#
+# The route-classification suite parses the gateway's own source as text to prove every mounted
+# route states an auth class, and the provisioning scripts are executed as text by a shell. Git
+# hands a Windows checkout CRLF by default, which turned that suite red on a platform difference
+# that had nothing to do with what it asserts, and would break a shell script outright.
+#
+# text=auto still lets git detect and leave binaries alone.
+* text=auto eol=lf
+
+# Belt to that braces: never touch these, whatever detection thinks.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.icns binary
+*.pdf binary
+*.woff binary
+*.woff2 binary
+*.wasm binary
+*.exe binary
+*.dll binary

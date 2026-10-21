@@ -1,0 +1,15 @@
+{
+  "checkpoint_id": "cp_acme_20260920T140000Z_g4711",
+  "hold_id": "hold_20260920T142200Z",
+  "hold_version": 1,
+  "reason": "restore from cp_acme_20260920T140000Z_g4711",
+  "retained_ref": {
+    "generation": "1758376682117000",
+    "object": "holds/acme/retained.json",
+    "refreshed_at": "2026-09-20T13:58:02Z"
+  },
+  "set_at": "2026-09-20T14:22:00Z",
+  "set_by": "operator@example.com",
+  "state": "held",
+  "tenant": "acme"
+}

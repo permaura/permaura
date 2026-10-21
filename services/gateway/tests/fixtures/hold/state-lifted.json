@@ -1,0 +1,11 @@
+{
+  "checkpoint_id": null,
+  "hold_id": null,
+  "hold_version": 1,
+  "reason": "hold lifted: reconciliation closed",
+  "retained_ref": null,
+  "set_at": "2026-09-22T03:18:26Z",
+  "set_by": "operator@example.com",
+  "state": "open",
+  "tenant": "acme"
+}

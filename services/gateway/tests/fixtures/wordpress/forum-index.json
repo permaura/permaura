@@ -1,0 +1,3618 @@
+{
+ "name": "Events Manager Pro Support",
+ "description": "Here is where you can ask questions, request features and report bugs",
+ "url": "https://eventsmanagerpro.com/support",
+ "home": "https://eventsmanagerpro.com/support",
+ "gmt_offset": 2,
+ "timezone_string": "Europe/Madrid",
+ "namespaces": [
+  "bbpress/v1",
+  "wp/v2",
+  "wp-abilities/v1"
+ ],
+ "authentication": {
+  "application-passwords": {
+   "endpoints": {
+    "authorization": "https://eventsmanagerpro.com/support/wp-admin/authorize-application.php"
+   }
+  }
+ },
+ "routes": {
+  "/": {
+   "namespace": "",
+   "methods": [
+    "GET"
+   ],
+   "endpoints": [
+    {
+     "methods": [
+      "GET"
+     ],
+     "args": {
+      "context": {
+       "default": "view",
+       "required": false
+      }
+     }
+    }
+   ],
+   "_links": {
+    "self": [
+     {
+      "href": "https://eventsmanagerpro.com/support/wp-json/"
+     }
+    ]
+   }
+  },
+  "/bbpress/v1": {
+   "namespace": "bbpress/v1",
+   "methods": [
+    "GET"
+   ],
+   "endpoints": [
+    {
+     "methods": [
+      "GET"
+     ],
+     "args": {
+      "namespace": {
+       "default": "bbpress/v1",
+       "required": false
+      },
+      "context": {
+       "default": "view",
+       "required": false
+      }
+     }
+    }
+   ],
+   "_links": {
+    "self": [
+     {
+      "href": "https://eventsmanagerpro.com/support/wp-json/bbpress/v1"
+     }
+    ]
+   }
+  },
+  "/bbpress/v1/info": {
+   "namespace": "bbpress/v1",
+   "methods": [
+    "GET"
+   ],
+   "endpoints": [
+    {
+     "methods": [
+      "GET"
+     ],
+     "args": []
+    }
+   ],
+   "_links": {
+    "self": [
+     {
+      "href": "https://eventsmanagerpro.com/support/wp-json/bbpress/v1/info"
+     }
+    ]
+   }
+  },
+  "/bbpress/v1/forums": {
+   "namespace": "bbpress/v1",
+   "methods": [
+    "GET",
+    "POST"
+   ],
+   "endpoints": [
+    {
+     "methods": [
+      "GET"
+     ],
+     "args": {
+      "page": {
+       "description": "Current page of the collection.",
+       "type": "integer",
+       "default": 1,
+       "minimum": 1,
+       "required": false
+      },
+      "per_page": {
+       "description": "Maximum number of items to return per page.",
+       "type": "integer",
+       "default": 20,
+       "minimum": 1,
+       "maximum": 100,
+       "required": false
+      },
+      "orderby": {
+       "description": "Sort collection by attribute.",
+       "type": "string",
+       "enum": [
+        "date",
+        "modified",
+        "title",
+        "menu_order",
+        "id",
+        "last_active"
+       ],
+       "default": "menu_order",
+       "required": false
+      },
+      "order": {
+       "description": "Order sort direction.",
+       "type": "string",
+       "enum": [
+        "asc",
+        "desc"
+       ],
+       "default": "desc",
+       "required": false
+      },
+      "parent": {
+       "description": "Limit to forums with the given parent ID. Use 0 for top-level forums.",
+       "type": "integer",
+       "required": false
+      },
+      "status": {
+       "description": "Comma-separated statuses (publish, private, hidden).",
+       "type": "string",
+       "default": "publish",
+       "required": false
+      },
+      "forum_type": {
+       "description": "Filter by forum vs category.",
+       "type": "string",
+       "enum": [
+        "forum",
+        "category"
+       ],
+       "required": false
+      },
+      "search": {
+       "description": "Full-text search across forum titles and content.",
+       "type": "string",
+       "required": false
+      },
+      "context": {
+       "description": "Response context. \"view\" (default), \"edit\" exposes mod-only fields, \"embed\" returns a slim summary.",
+       "type": "string",
+       "enum": [
+        "view",
+        "edit",
+        "embed"
+       ],
+       "default": "view",
+       "required": false
+      }
+     }
+    },
+    {
+     "methods": [
+      "POST"
+     ],
+     "args": {
+      "title": {
+       "type": "string",
+       "description": "Forum title.",
+       "required": true
+      },
+      "content": {
+       "type": "string",
+       "description": "Forum description / content.",
+       "default": "",
+       "required": false
+      },
+      "parent_forum_id": {
+       "type": "integer",
+       "description": "Parent forum ID, or 0 for top-level.",
+       "default": 0,
+       "required": false
+      },
+      "forum_status": {
+       "type": "string",
+       "enum": [
+        "open",
+        "closed"
+       ],
+       "description": "Whether the forum accepts new topics.",
+       "default": "open",
+       "required": false
+      },
+      "forum_type": {
+       "type": "string",
+       "enum": [
+        "forum",
+        "category"
+       ],
+       "description": "Categories cannot hold topics directly.",
+       "default": "forum",
+       "required": false
+      },
+      "visibility": {
+       "type": "string",
+       "enum": [
+        "public",
+        "private",
+        "hidden"
+       ],
+       "description": "Read access level.",
+       "default": "public",
+       "required": false
+      },
+      "menu_order": {
+       "type": "integer",
+       "description": "Sort order within siblings.",
+       "default": 0,
+       "required": false
+      },
+      "status": {
+       "type": "string",
+       "description": "WordPress post status.",
+       "required": false
+      },
+      "author_id": {
+       "type": "integer",
+       "description": "Override author. Requires bbp_api_moderate.",
+       "required": false
+      }
+     }
+    }
+   ],
+   "_links": {
+    "self": [
+     {
+      "href": "https://eventsmanagerpro.com/support/wp-json/bbpress/v1/forums"
+     }
+    ]
+   }
+  },
+  "/bbpress/v1/forums/(?P<id>[\\d]+)": {
+   "namespace": "bbpress/v1",
+   "methods": [
+    "GET",
+    "POST",
+    "PUT",
+    "PATCH",
+    "DELETE"
+   ],
+   "endpoints": [
+    {
+     "methods": [
+      "GET"
+     ],
+     "args": {
+      "id": {
+       "type": "integer",
+       "required": true
+      }
+     }
+    },
+    {
+     "methods": [
+      "POST",
+      "PUT",
+      "PATCH"
+     ],
+     "args": {
+      "title": {
+       "type": "string",
+       "description": "Forum title.",
+       "required": false
+      },
+      "content": {
+       "type": "string",
+       "description": "Forum description / content.",
+       "default": "",
+       "required": false
+      },
+      "parent_forum_id": {
+       "type": "integer",
+       "description": "Parent forum ID, or 0 for top-level.",
+       "default": 0,
+       "required": false
+      },
+      "forum_status": {
+       "type": "string",
+       "enum": [
+        "open",
+        "closed"
+       ],
+       "description": "Whether the forum accepts new topics.",
+       "default": "open",
+       "required": false
+      },
+      "forum_type": {
+       "type": "string",
+       "enum": [
+        "forum",
+        "category"
+       ],
+       "description": "Categories cannot hold topics directly.",
+       "default": "forum",
+       "required": false
+      },
+      "visibility": {
+       "type": "string",
+       "enum": [
+        "public",
+        "private",
+        "hidden"
+       ],
+       "description": "Read access level.",
+       "default": "public",
+       "required": false
+      },
+      "menu_order": {
+       "type": "integer",
+       "description": "Sort order within siblings.",
+       "default": 0,
+       "required": false
+      },
+      "status": {
+       "type": "string",
+       "description": "WordPress post status.",
+       "required": false
+      },
+      "author_id": {
+       "type": "integer",
+       "description": "Override author. Requires bbp_api_moderate.",
+       "required": false
+      }
+     }
+    },
+    {
+     "methods": [
+      "DELETE"
+     ],
+     "args": {
+      "id": {
+       "type": "integer",
+       "required": true
+      },
+      "force": {
+       "type": "boolean",
+       "default": false,
+       "description": "Permanently delete instead of trashing.",
+       "required": false
+      }
+     }
+    }
+   ]
+  },
+  "/bbpress/v1/forums/(?P<id>[\\d]+)/subforums": {
+   "namespace": "bbpress/v1",
+   "methods": [
+    "GET"
+   ],
+   "endpoints": [
+    {
+     "methods": [
+      "GET"
+     ],
+     "args": {
+      "id": {
+       "type": "integer",
+       "required": true
+      },
+      "page": {
+       "description": "Current page of the collection.",
+       "type": "integer",
+       "default": 1,
+       "minimum": 1,
+       "required": false
+      },
+      "per_page": {
+       "description": "Maximum number of items to return per page.",
+       "type": "integer",
+       "default": 20,
+       "minimum": 1,
+       "maximum": 100,
+       "required": false
+      }
+     }
+    }
+   ]
+  },
+  "/bbpress/v1/forums/(?P<id>[\\d]+)/topics": {
+   "namespace": "bbpress/v1",
+   "methods": [
+    "GET"
+   ],
+   "endpoints": [
+    {
+     "methods": [
+      "GET"
+     ],
+     "args": {
+      "id": {
+       "type": "integer",
+       "required": true
+      },
+      "page": {
+       "description": "Current page of the collection.",
+       "type": "integer",
+       "default": 1,
+       "minimum": 1,
+       "required": false
+      },
+      "per_page": {
+       "description": "Maximum number of items to return per page.",
+       "type": "integer",
+       "default": 20,
+       "minimum": 1,
+       "maximum": 100,
+       "required": false
+      },
+      "status": {
+       "type": "string",
+       "description": "Comma-separated statuses; defaults to publish,closed.",
+       "required": false
+      }
+     }
+    }
+   ]
+  },
+  "/bbpress/v1/forums/(?P<id>[\\d]+)/subscribers": {
+   "namespace": "bbpress/v1",
+   "methods": [
+    "GET"
+   ],
+   "endpoints": [
+    {
+     "methods": [
+      "GET"
+     ],
+     "args": {
+      "id": {
+       "type": "integer",
+       "required": true
+      },
+      "page": {
+       "description": "Current page of the collection.",
+       "type": "integer",
+       "default": 1,
+       "minimum": 1,
+       "required": false
+      },
+      "per_page": {
+       "description": "Maximum number of items to return per page.",
+       "type": "integer",
+       "default": 20,
+       "minimum": 1,
+       "maximum": 100,
+       "required": false
+      }
+     }
+    }
+   ]
+  },
+  "/bbpress/v1/forums/(?P<id>[\\d]+)/actions/(?P<action>open|close|categorize|uncategorize|publicize|privatize|hide)": {
+   "namespace": "bbpress/v1",
+   "methods": [
+    "POST"
+   ],
+   "endpoints": [
+    {
+     "methods": [
+      "POST"
+     ],
+     "args": {
+      "id": {
+       "type": "integer",
+       "required": true
+      },
+      "action": {
+       "type": "string",
+       "required": true
+      }
+     }
+    }
+   ]
+  },
+  "/bbpress/v1/topics": {
+   "namespace": "bbpress/v1",
+   "methods": [
+    "GET",
+    "POST"
+   ],
+   "endpoints": [
+    {
+     "methods": [
+      "GET"
+     ],
+     "args": {
+      "page": {
+       "description": "Current page of the collection.",
+       "type": "integer",
+       "default": 1,
+       "minimum": 1,
+       "required": false
+      },
+      "per_page": {
+       "description": "Maximum number of items to return per page.",
+       "type": "integer",
+       "default": 20,
+       "minimum": 1,
+       "maximum": 100,
+       "required": false
+      },
+      "orderby": {
+       "description": "Sort collection by attribute.",
+       "type": "string",
+       "enum": [
+        "date",
+        "modified",
+        "title",
+        "menu_order",
+        "id",
+        "last_active",
+        "voice_count",
+        "reply_count"
+       ],
+       "default": "last_active",
+       "required": false
+      },
+      "order": {
+       "description": "Order sort direction.",
+       "type": "string",
+       "enum": [
+        "asc",
+        "desc"
+       ],
+       "default": "desc",
+       "required": false
+      },
+      "forum_id": {
+       "type": "integer",
+       "description": "Limit to topics in this forum.",
+       "required": false
+      },
+      "author_id": {
+       "type": "integer",
+       "description": "Limit to topics by this author.",
+       "required": false
+      },
+      "status": {
+       "type": "string",
+       "description": "Comma-separated statuses. Defaults to publish,closed.",
+       "required": false
+      },
+      "sticky": {
+       "type": "string",
+       "enum": [
+        "any",
+        "normal",
+        "sticky",
+        "super_sticky"
+       ],
+       "default": "any",
+       "required": false
+      },
+      "tag": {
+       "type": "string",
+       "description": "Filter by topic-tag slug.",
+       "required": false
+      },
+      "search": {
+       "type": "string",
+       "description": "Full-text search.",
+       "required": false
+      },
+      "context": {
+       "type": "string",
+       "enum": [
+        "view",
+        "edit",
+        "embed"
+       ],
+       "default": "view",
+       "required": false
+      },
+      "after": {
+       "type": "string",
+       "format": "date-time",
+       "required": false
+      },
+      "before": {
+       "type": "string",
+       "format": "date-time",
+       "required": false
+      },
+      "modified_after": {
+       "type": "string",
+       "format": "date-time",
+       "description": "Topics whose content was edited at/after this ISO 8601 (UTC) time.",
+       "required": false
+      },
+      "active_after": {
+       "type": "string",
+       "format": "date-time",
+       "description": "What-changed-since filter: topics last active (e.g. a new reply) at/after this ISO 8601 (UTC) time.",
+       "required": false
+      }
+     }
+    },
+    {
+     "methods": [
+      "POST"
+     ],
+     "args": {
+      "forum_id": {
+       "type": "integer",
+       "description": "Parent forum ID.",
+       "required": true
+      },
+      "title": {
+       "type": "string",
+       "description": "Topic title.",
+       "required": true
+      },
+      "content": {
+       "type": "string",
+       "description": "Topic body.",
+       "required": true
+      },
+      "status": {
+       "type": "string",
+       "description": "Post status.",
+       "required": false
+      },
+      "sticky": {
+       "type": "string",
+       "enum": [
+        "normal",
+        "sticky",
+        "super_sticky"
+       ],
+       "default": "normal",
+       "required": false
+      },
+      "tags": {
+       "type": "array",
+       "items": {
+        "type": "string"
+       },
+       "description": "Topic-tag slugs or names.",
+       "required": false
+      },
+      "author_id": {
+       "type": "integer",
+       "description": "Override author. Requires bbp_api_moderate.",
+       "required": false
+      }
+     }
+    }
+   ],
+   "_links": {
+    "self": [
+     {
+      "href": "https://eventsmanagerpro.com/support/wp-json/bbpress/v1/topics"
+     }
+    ]
+   }
+  },
+  "/bbpress/v1/topics/(?P<id>[\\d]+)": {
+   "namespace": "bbpress/v1",
+   "methods": [
+    "GET",
+    "POST",
+    "PUT",
+    "PATCH",
+    "DELETE"
+   ],
+   "endpoints": [
+    {
+     "methods": [
+      "GET"
+     ],
+     "args": {
+      "id": {
+       "type": "integer",
+       "required": true
+      }
+     }
+    },
+    {
+     "methods": [
+      "POST",
+      "PUT",
+      "PATCH"
+     ],
+     "args": {
+      "forum_id": {
+       "type": "integer",
+       "description": "Parent forum ID.",
+       "required": false
+      },
+      "title": {
+       "type": "string",
+       "description": "Topic title.",
+       "required": false
+      },
+      "content": {
+       "type": "string",
+       "description": "Topic body.",
+       "required": false
+      },
+      "status": {
+       "type": "string",
+       "description": "Post status.",
+       "required": false
+      },
+      "sticky": {
+       "type": "string",
+       "enum": [
+        "normal",
+        "sticky",
+        "super_sticky"
+       ],
+       "default": "normal",
+       "required": false
+      },
+      "tags": {
+       "type": "array",
+       "items": {
+        "type": "string"
+       },
+       "description": "Topic-tag slugs or names.",
+       "required": false
+      },
+      "author_id": {
+       "type": "integer",
+       "description": "Override author. Requires bbp_api_moderate.",
+       "required": false
+      }
+     }
+    },
+    {
+     "methods": [
+      "DELETE"
+     ],
+     "args": {
+      "id": {
+       "type": "integer",
+       "required": true
+      },
+      "force": {
+       "type": "boolean",
+       "default": false,
+       "required": false
+      }
+     }
+    }
+   ]
+  },
+  "/bbpress/v1/topics/(?P<id>[\\d]+)/replies": {
+   "namespace": "bbpress/v1",
+   "methods": [
+    "GET",
+    "POST"
+   ],
+   "endpoints": [
+    {
+     "methods": [
+      "GET"
+     ],
+     "args": {
+      "id": {
+       "type": "integer",
+       "required": true
+      },
+      "page": {
+       "description": "Current page of the collection.",
+       "type": "integer",
+       "default": 1,
+       "minimum": 1,
+       "required": false
+      },
+      "per_page": {
+       "description": "Maximum number of items to return per page.",
+       "type": "integer",
+       "default": 20,
+       "minimum": 1,
+       "maximum": 100,
+       "required": false
+      },
+      "status": {
+       "type": "string",
+       "required": false
+      }
+     }
+    },
+    {
+     "methods": [
+      "POST"
+     ],
+     "args": {
+      "id": {
+       "type": "integer",
+       "required": true
+      },
+      "content": {
+       "type": "string",
+       "required": true
+      },
+      "reply_to": {
+       "type": "integer",
+       "default": 0,
+       "description": "ID of the reply being quoted, or 0 if none.",
+       "required": false
+      },
+      "status": {
+       "type": "string",
+       "description": "Override status; defaults to topic status.",
+       "required": false
+      },
+      "author_id": {
+       "type": "integer",
+       "description": "Override author. Requires bbp_api_moderate.",
+       "required": false
+      },
+      "title": {
+       "type": "string",
+       "description": "Reply title. Defaults to topic title.",
+       "required": false
+      }
+     }
+    }
+   ]
+  },
+  "/bbpress/v1/topics/(?P<id>[\\d]+)/subscribers": {
+   "namespace": "bbpress/v1",
+   "methods": [
+    "GET"
+   ],
+   "endpoints": [
+    {
+     "methods": [
+      "GET"
+     ],
+     "args": {
+      "id": {
+       "type": "integer",
+       "required": true
+      },
+      "page": {
+       "description": "Current page of the collection.",
+       "type": "integer",
+       "default": 1,
+       "minimum": 1,
+       "required": false
+      },
+      "per_page": {
+       "description": "Maximum number of items to return per page.",
+       "type": "integer",
+       "default": 20,
+       "minimum": 1,
+       "maximum": 100,
+       "required": false
+      }
+     }
+    }
+   ]
+  },
+  "/bbpress/v1/topics/(?P<id>[\\d]+)/favoriters": {
+   "namespace": "bbpress/v1",
+   "methods": [
+    "GET"
+   ],
+   "endpoints": [
+    {
+     "methods": [
+      "GET"
+     ],
+     "args": {
+      "id": {
+       "type": "integer",
+       "required": true
+      },
+      "page": {
+       "description": "Current page of the collection.",
+       "type": "integer",
+       "default": 1,
+       "minimum": 1,
+       "required": false
+      },
+      "per_page": {
+       "description": "Maximum number of items to return per page.",
+       "type": "integer",
+       "default": 20,
+       "minimum": 1,
+       "maximum": 100,
+       "required": false
+      }
+     }
+    }
+   ]
+  },
+  "/bbpress/v1/topics/(?P<id>[\\d]+)/engagements": {
+   "namespace": "bbpress/v1",
+   "methods": [
+    "GET"
+   ],
+   "endpoints": [
+    {
+     "methods": [
+      "GET"
+     ],
+     "args": {
+      "id": {
+       "type": "integer",
+       "required": true
+      },
+      "page": {
+       "description": "Current page of the collection.",
+       "type": "integer",
+       "default": 1,
+       "minimum": 1,
+       "required": false
+      },
+      "per_page": {
+       "description": "Maximum number of items to return per page.",
+       "type": "integer",
+       "default": 20,
+       "minimum": 1,
+       "maximum": 100,
+       "required": false
+      }
+     }
+    }
+   ]
+  },
+  "/bbpress/v1/topics/(?P<id>[\\d]+)/actions/(?P<action>close|open|stick|unstick|spam|unspam|approve|trash|restore|move|merge|split)": {
+   "namespace": "bbpress/v1",
+   "methods": [
+    "POST"
+   ],
+   "endpoints": [
+    {
+     "methods": [
+      "POST"
+     ],
+     "args": {
+      "id": {
+       "type": "integer",
+       "required": true
+      },
+      "action": {
+       "type": "string",
+       "required": true
+      },
+      "super": {
+       "type": "boolean",
+       "default": false,
+       "description": "For stick action: make super-sticky (across all forums).",
+       "required": false
+      },
+      "destination_forum_id": {
+       "type": "integer",
+       "description": "For move action: target forum.",
+       "required": false
+      },
+      "destination_topic_id": {
+       "type": "integer",
+       "description": "For merge action: topic to merge into.",
+       "required": false
+      },
+      "from_reply_id": {
+       "type": "integer",
+       "description": "For split action: split at this reply.",
+       "required": false
+      },
+      "new_topic_title": {
+       "type": "string",
+       "description": "For split action: title for the new topic.",
+       "required": false
+      }
+     }
+    }
+   ]
+  },
+  "/bbpress/v1/replies": {
+   "namespace": "bbpress/v1",
+   "methods": [
+    "GET",
+    "POST"
+   ],
+   "endpoints": [
+    {
+     "methods": [
+      "GET"
+     ],
+     "args": {
+      "page": {
+       "description": "Current page of the collection.",
+       "type": "integer",
+       "default": 1,
+       "minimum": 1,
+       "required": false
+      },
+      "per_page": {
+       "description": "Maximum number of items to return per page.",
+       "type": "integer",
+       "default": 25,
+       "minimum": 1,
+       "maximum": 100,
+       "required": false
+      },
+      "orderby": {
+       "description": "Sort collection by attribute.",
+       "type": "string",
+       "enum": [
+        "date",
+        "modified",
+        "menu_order",
+        "id"
+       ],
+       "default": "date",
+       "required": false
+      },
+      "order": {
+       "description": "Order sort direction.",
+       "type": "string",
+       "enum": [
+        "asc",
+        "desc"
+       ],
+       "default": "desc",
+       "required": false
+      },
+      "topic_id": {
+       "type": "integer",
+       "description": "Limit to replies in this topic.",
+       "required": false
+      },
+      "forum_id": {
+       "type": "integer",
+       "description": "Limit to replies in this forum.",
+       "required": false
+      },
+      "author_id": {
+       "type": "integer",
+       "description": "Limit to replies by this author.",
+       "required": false
+      },
+      "status": {
+       "type": "string",
+       "description": "Comma-separated statuses.",
+       "required": false
+      },
+      "reply_to": {
+       "type": "integer",
+       "description": "Limit to replies quoting this reply.",
+       "required": false
+      },
+      "search": {
+       "type": "string",
+       "required": false
+      },
+      "after": {
+       "type": "string",
+       "format": "date-time",
+       "required": false
+      },
+      "before": {
+       "type": "string",
+       "format": "date-time",
+       "required": false
+      },
+      "context": {
+       "type": "string",
+       "enum": [
+        "view",
+        "edit",
+        "embed"
+       ],
+       "default": "view",
+       "required": false
+      }
+     }
+    },
+    {
+     "methods": [
+      "POST"
+     ],
+     "args": {
+      "topic_id": {
+       "type": "integer",
+       "description": "Topic this reply belongs to.",
+       "required": true
+      },
+      "content": {
+       "type": "string",
+       "description": "Reply body.",
+       "required": true
+      },
+      "title": {
+       "type": "string",
+       "description": "Reply title. Optional, defaults to parent topic title.",
+       "required": false
+      },
+      "reply_to": {
+       "type": "integer",
+       "description": "ID of the reply being quoted, or 0 if none.",
+       "default": 0,
+       "required": false
+      },
+      "status": {
+       "type": "string",
+       "required": false
+      },
+      "author_id": {
+       "type": "integer",
+       "description": "Override author. Requires bbp_api_moderate.",
+       "required": false
+      }
+     }
+    }
+   ],
+   "_links": {
+    "self": [
+     {
+      "href": "https://eventsmanagerpro.com/support/wp-json/bbpress/v1/replies"
+     }
+    ]
+   }
+  },
+  "/bbpress/v1/replies/(?P<id>[\\d]+)": {
+   "namespace": "bbpress/v1",
+   "methods": [
+    "GET",
+    "POST",
+    "PUT",
+    "PATCH",
+    "DELETE"
+   ],
+   "endpoints": [
+    {
+     "methods": [
+      "GET"
+     ],
+     "args": {
+      "id": {
+       "type": "integer",
+       "required": true
+      }
+     }
+    },
+    {
+     "methods": [
+      "POST",
+      "PUT",
+      "PATCH"
+     ],
+     "args": {
+      "topic_id": {
+       "type": "integer",
+       "description": "Topic this reply belongs to.",
+       "required": false
+      },
+      "content": {
+       "type": "string",
+       "description": "Reply body.",
+       "required": false
+      },
+      "title": {
+       "type": "string",
+       "description": "Reply title. Optional, defaults to parent topic title.",
+       "required": false
+      },
+      "reply_to": {
+       "type": "integer",
+       "description": "ID of the reply being quoted, or 0 if none.",
+       "default": 0,
+       "required": false
+      },
+      "status": {
+       "type": "string",
+       "required": false
+      },
+      "author_id": {
+       "type": "integer",
+       "description": "Override author. Requires bbp_api_moderate.",
+       "required": false
+      }
+     }
+    },
+    {
+     "methods": [
+      "DELETE"
+     ],
+     "args": {
+      "id": {
+       "type": "integer",
+       "required": true
+      },
+      "force": {
+       "type": "boolean",
+       "default": false,
+       "required": false
+      }
+     }
+    }
+   ]
+  },
+  "/bbpress/v1/replies/(?P<id>[\\d]+)/actions/(?P<action>spam|unspam|approve|trash|restore|move)": {
+   "namespace": "bbpress/v1",
+   "methods": [
+    "POST"
+   ],
+   "endpoints": [
+    {
+     "methods": [
+      "POST"
+     ],
+     "args": {
+      "id": {
+       "type": "integer",
+       "required": true
+      },
+      "action": {
+       "type": "string",
+       "required": true
+      },
+      "destination_topic_id": {
+       "type": "integer",
+       "description": "For move action.",
+       "required": false
+      }
+     }
+    }
+   ]
+  },
+  "/bbpress/v1/users": {
+   "namespace": "bbpress/v1",
+   "methods": [
+    "GET"
+   ],
+   "endpoints": [
+    {
+     "methods": [
+      "GET"
+     ],
+     "args": {
+      "page": {
+       "description": "Current page of the collection.",
+       "type": "integer",
+       "default": 1,
+       "minimum": 1,
+       "required": false
+      },
+      "per_page": {
+       "description": "Maximum number of items to return per page.",
+       "type": "integer",
+       "default": 20,
+       "minimum": 1,
+       "maximum": 100,
+       "required": false
+      },
+      "role": {
+       "type": "string",
+       "description": "Filter by WordPress role (e.g. bbp_keymaster).",
+       "required": false
+      },
+      "search": {
+       "type": "string",
+       "required": false
+      }
+     }
+    }
+   ],
+   "_links": {
+    "self": [
+     {
+      "href": "https://eventsmanagerpro.com/support/wp-json/bbpress/v1/users"
+     }
+    ]
+   }
+  },
+  "/bbpress/v1/users/me": {
+   "namespace": "bbpress/v1",
+   "methods": [
+    "GET"
+   ],
+   "endpoints": [
+    {
+     "methods": [
+      "GET"
+     ],
+     "args": []
+    }
+   ],
+   "_links": {
+    "self": [
+     {
+      "href": "https://eventsmanagerpro.com/support/wp-json/bbpress/v1/users/me"
+     }
+    ]
+   }
+  },
+  "/bbpress/v1/users/(?P<id>[\\d]+)": {
+   "namespace": "bbpress/v1",
+   "methods": [
+    "GET"
+   ],
+   "endpoints": [
+    {
+     "methods": [
+      "GET"
+     ],
+     "args": {
+      "id": {
+       "type": "integer",
+       "required": true
+      }
+     }
+    }
+   ]
+  },
+  "/bbpress/v1/users/(?P<id>[\\d]+)/topics": {
+   "namespace": "bbpress/v1",
+   "methods": [
+    "GET"
+   ],
+   "endpoints": [
+    {
+     "methods": [
+      "GET"
+     ],
+     "args": {
+      "id": {
+       "type": "integer",
+       "required": true
+      },
+      "page": {
+       "description": "Current page of the collection.",
+       "type": "integer",
+       "default": 1,
+       "minimum": 1,
+       "required": false
+      },
+      "per_page": {
+       "description": "Maximum number of items to return per page.",
+       "type": "integer",
+       "default": 20,
+       "minimum": 1,
+       "maximum": 100,
+       "required": false
+      }
+     }
+    }
+   ]
+  },
+  "/bbpress/v1/users/(?P<id>[\\d]+)/replies": {
+   "namespace": "bbpress/v1",
+   "methods": [
+    "GET"
+   ],
+   "endpoints": [
+    {
+     "methods": [
+      "GET"
+     ],
+     "args": {
+      "id": {
+       "type": "integer",
+       "required": true
+      },
+      "page": {
+       "description": "Current page of the collection.",
+       "type": "integer",
+       "default": 1,
+       "minimum": 1,
+       "required": false
+      },
+      "per_page": {
+       "description": "Maximum number of items to return per page.",
+       "type": "integer",
+       "default": 20,
+       "minimum": 1,
+       "maximum": 100,
+       "required": false
+      }
+     }
+    }
+   ]
+  },
+  "/bbpress/v1/users/(?P<id>[\\d]+)/favorites": {
+   "namespace": "bbpress/v1",
+   "methods": [
+    "GET"
+   ],
+   "endpoints": [
+    {
+     "methods": [
+      "GET"
+     ],
+     "args": {
+      "id": {
+       "type": "integer",
+       "required": true
+      },
+      "page": {
+       "description": "Current page of the collection.",
+       "type": "integer",
+       "default": 1,
+       "minimum": 1,
+       "required": false
+      },
+      "per_page": {
+       "description": "Maximum number of items to return per page.",
+       "type": "integer",
+       "default": 20,
+       "minimum": 1,
+       "maximum": 100,
+       "required": false
+      }
+     }
+    }
+   ]
+  },
+  "/bbpress/v1/users/(?P<id>[\\d]+)/favorites/(?P<topic_id>[\\d]+)": {
+   "namespace": "bbpress/v1",
+   "methods": [
+    "POST",
+    "PUT",
+    "PATCH",
+    "DELETE"
+   ],
+   "endpoints": [
+    {
+     "methods": [
+      "POST",
+      "PUT",
+      "PATCH"
+     ],
+     "args": {
+      "id": {
+       "type": "integer",
+       "required": true
+      },
+      "topic_id": {
+       "type": "integer",
+       "required": true
+      }
+     }
+    },
+    {
+     "methods": [
+      "DELETE"
+     ],
+     "args": {
+      "id": {
+       "type": "integer",
+       "required": true
+      },
+      "topic_id": {
+       "type": "integer",
+       "required": true
+      }
+     }
+    }
+   ]
+  },
+  "/bbpress/v1/users/(?P<id>[\\d]+)/subscriptions": {
+   "namespace": "bbpress/v1",
+   "methods": [
+    "GET"
+   ],
+   "endpoints": [
+    {
+     "methods": [
+      "GET"
+     ],
+     "args": {
+      "id": {
+       "type": "integer",
+       "required": true
+      },
+      "type": {
+       "type": "string",
+       "enum": [
+        "all",
+        "forum",
+        "topic"
+       ],
+       "default": "all",
+       "required": false
+      },
+      "page": {
+       "description": "Current page of the collection.",
+       "type": "integer",
+       "default": 1,
+       "minimum": 1,
+       "required": false
+      },
+      "per_page": {
+       "description": "Maximum number of items to return per page.",
+       "type": "integer",
+       "default": 20,
+       "minimum": 1,
+       "maximum": 100,
+       "required": false
+      }
+     }
+    }
+   ]
+  },
+  "/bbpress/v1/users/(?P<id>[\\d]+)/subscriptions/(?P<object_id>[\\d]+)": {
+   "namespace": "bbpress/v1",
+   "methods": [
+    "POST",
+    "PUT",
+    "PATCH",
+    "DELETE"
+   ],
+   "endpoints": [
+    {
+     "methods": [
+      "POST",
+      "PUT",
+      "PATCH"
+     ],
+     "args": {
+      "id": {
+       "type": "integer",
+       "required": true
+      },
+      "object_id": {
+       "type": "integer",
+       "required": true
+      }
+     }
+    },
+    {
+     "methods": [
+      "DELETE"
+     ],
+     "args": {
+      "id": {
+       "type": "integer",
+       "required": true
+      },
+      "object_id": {
+       "type": "integer",
+       "required": true
+      }
+     }
+    }
+   ]
+  },
+  "/bbpress/v1/users/(?P<id>[\\d]+)/forum-role": {
+   "namespace": "bbpress/v1",
+   "methods": [
+    "POST",
+    "PUT",
+    "PATCH"
+   ],
+   "endpoints": [
+    {
+     "methods": [
+      "POST",
+      "PUT",
+      "PATCH"
+     ],
+     "args": {
+      "id": {
+       "type": "integer",
+       "required": true
+      },
+      "role": {
+       "type": "string",
+       "enum": [
+        "bbp_keymaster",
+        "bbp_moderator",
+        "bbp_participant",
+        "bbp_spectator",
+        "bbp_blocked"
+       ],
+       "description": "bbPress forum role slug.",
+       "required": true
+      }
+     }
+    }
+   ]
+  },
+  "/bbpress/v1/engagements/topic/(?P<topic_id>[\\d]+)/subscribers": {
+   "namespace": "bbpress/v1",
+   "methods": [
+    "GET"
+   ],
+   "endpoints": [
+    {
+     "methods": [
+      "GET"
+     ],
+     "args": {
+      "topic_id": {
+       "type": "integer",
+       "required": true
+      },
+      "page": {
+       "description": "Current page of the collection.",
+       "type": "integer",
+       "default": 1,
+       "minimum": 1,
+       "required": false
+      },
+      "per_page": {
+       "description": "Maximum number of items to return per page.",
+       "type": "integer",
+       "default": 20,
+       "minimum": 1,
+       "maximum": 100,
+       "required": false
+      }
+     }
+    }
+   ]
+  },
+  "/bbpress/v1/engagements/topic/(?P<topic_id>[\\d]+)/favoriters": {
+   "namespace": "bbpress/v1",
+   "methods": [
+    "GET"
+   ],
+   "endpoints": [
+    {
+     "methods": [
+      "GET"
+     ],
+     "args": {
+      "topic_id": {
+       "type": "integer",
+       "required": true
+      },
+      "page": {
+       "description": "Current page of the collection.",
+       "type": "integer",
+       "default": 1,
+       "minimum": 1,
+       "required": false
+      },
+      "per_page": {
+       "description": "Maximum number of items to return per page.",
+       "type": "integer",
+       "default": 20,
+       "minimum": 1,
+       "maximum": 100,
+       "required": false
+      }
+     }
+    }
+   ]
+  },
+  "/bbpress/v1/engagements/forum/(?P<forum_id>[\\d]+)/subscribers": {
+   "namespace": "bbpress/v1",
+   "methods": [
+    "GET"
+   ],
+   "endpoints": [
+    {
+     "methods": [
+      "GET"
+     ],
+     "args": {
+      "forum_id": {
+       "type": "integer",
+       "required": true
+      },
+      "page": {
+       "description": "Current page of the collection.",
+       "type": "integer",
+       "default": 1,
+       "minimum": 1,
+       "required": false
+      },
+      "per_page": {
+       "description": "Maximum number of items to return per page.",
+       "type": "integer",
+       "default": 20,
+       "minimum": 1,
+       "maximum": 100,
+       "required": false
+      }
+     }
+    }
+   ]
+  },
+  "/bbpress/v1/topic-tags": {
+   "namespace": "bbpress/v1",
+   "methods": [
+    "GET",
+    "POST"
+   ],
+   "endpoints": [
+    {
+     "methods": [
+      "GET"
+     ],
+     "args": {
+      "page": {
+       "description": "Current page of the collection.",
+       "type": "integer",
+       "default": 1,
+       "minimum": 1,
+       "required": false
+      },
+      "per_page": {
+       "description": "Maximum number of items to return per page.",
+       "type": "integer",
+       "default": 50,
+       "minimum": 1,
+       "maximum": 100,
+       "required": false
+      },
+      "search": {
+       "type": "string",
+       "required": false
+      },
+      "orderby": {
+       "type": "string",
+       "enum": [
+        "name",
+        "count",
+        "slug",
+        "id"
+       ],
+       "default": "name",
+       "required": false
+      },
+      "order": {
+       "type": "string",
+       "enum": [
+        "asc",
+        "desc"
+       ],
+       "default": "asc",
+       "required": false
+      }
+     }
+    },
+    {
+     "methods": [
+      "POST"
+     ],
+     "args": {
+      "name": {
+       "type": "string",
+       "description": "Tag display name.",
+       "required": true
+      },
+      "slug": {
+       "type": "string",
+       "description": "URL slug. Auto-generated from name if not supplied.",
+       "required": false
+      },
+      "description": {
+       "type": "string",
+       "description": "Tag description.",
+       "required": false
+      }
+     }
+    }
+   ],
+   "_links": {
+    "self": [
+     {
+      "href": "https://eventsmanagerpro.com/support/wp-json/bbpress/v1/topic-tags"
+     }
+    ]
+   }
+  },
+  "/bbpress/v1/topic-tags/(?P<id>[\\d]+)": {
+   "namespace": "bbpress/v1",
+   "methods": [
+    "GET",
+    "POST",
+    "PUT",
+    "PATCH",
+    "DELETE"
+   ],
+   "endpoints": [
+    {
+     "methods": [
+      "GET"
+     ],
+     "args": {
+      "id": {
+       "type": "integer",
+       "required": true
+      }
+     }
+    },
+    {
+     "methods": [
+      "POST",
+      "PUT",
+      "PATCH"
+     ],
+     "args": {
+      "id": {
+       "type": "integer",
+       "required": true
+      },
+      "name": {
+       "type": "string",
+       "description": "Tag display name.",
+       "required": false
+      },
+      "slug": {
+       "type": "string",
+       "description": "URL slug. Auto-generated from name if not supplied.",
+       "required": false
+      },
+      "description": {
+       "type": "string",
+       "description": "Tag description.",
+       "required": false
+      }
+     }
+    },
+    {
+     "methods": [
+      "DELETE"
+     ],
+     "args": {
+      "id": {
+       "type": "integer",
+       "required": true
+      }
+     }
+    }
+   ]
+  },
+  "/bbpress/v1/search": {
+   "namespace": "bbpress/v1",
+   "methods": [
+    "GET"
+   ],
+   "endpoints": [
+    {
+     "methods": [
+      "GET"
+     ],
+     "args": {
+      "page": {
+       "description": "Current page of the collection.",
+       "type": "integer",
+       "default": 1,
+       "minimum": 1,
+       "required": false
+      },
+      "per_page": {
+       "description": "Maximum number of items to return per page.",
+       "type": "integer",
+       "default": 20,
+       "minimum": 1,
+       "maximum": 100,
+       "required": false
+      },
+      "q": {
+       "type": "string",
+       "description": "Search query.",
+       "required": true
+      },
+      "type": {
+       "type": "string",
+       "description": "Comma-separated resource types: forum,topic,reply. Default all.",
+       "required": false
+      },
+      "forum_id": {
+       "type": "integer",
+       "required": false
+      },
+      "author_id": {
+       "type": "integer",
+       "required": false
+      },
+      "tag": {
+       "type": "string",
+       "description": "Topic tag slug.",
+       "required": false
+      },
+      "after": {
+       "type": "string",
+       "format": "date-time",
+       "required": false
+      },
+      "before": {
+       "type": "string",
+       "format": "date-time",
+       "required": false
+      },
+      "status": {
+       "type": "string",
+       "default": "publish",
+       "required": false
+      }
+     }
+    }
+   ],
+   "_links": {
+    "self": [
+     {
+      "href": "https://eventsmanagerpro.com/support/wp-json/bbpress/v1/search"
+     }
+    ]
+   }
+  },
+  "/bbpress/v1/stats": {
+   "namespace": "bbpress/v1",
+   "methods": [
+    "GET"
+   ],
+   "endpoints": [
+    {
+     "methods": [
+      "GET"
+     ],
+     "args": []
+    }
+   ],
+   "_links": {
+    "self": [
+     {
+      "href": "https://eventsmanagerpro.com/support/wp-json/bbpress/v1/stats"
+     }
+    ]
+   }
+  },
+  "/bbpress/v1/replies/(?P<id>[\\d]+)/helpful": {
+   "namespace": "bbpress/v1",
+   "methods": [
+    "GET",
+    "POST",
+    "PUT",
+    "PATCH"
+   ],
+   "endpoints": [
+    {
+     "methods": [
+      "GET"
+     ],
+     "args": {
+      "id": {
+       "type": "integer",
+       "required": true
+      },
+      "user_id": {
+       "type": "integer",
+       "description": "Optional: vote for a specific user (defaults to all).",
+       "required": false
+      }
+     }
+    },
+    {
+     "methods": [
+      "POST",
+      "PUT",
+      "PATCH"
+     ],
+     "args": {
+      "id": {
+       "type": "integer",
+       "required": true
+      },
+      "helpful": {
+       "type": "boolean",
+       "required": true
+      },
+      "user_id": {
+       "type": "integer",
+       "description": "Override voter. Requires bbp_api_moderate.",
+       "required": false
+      }
+     }
+    }
+   ]
+  },
+  "/bbpress/v1/topic-prefixes": {
+   "namespace": "bbpress/v1",
+   "methods": [
+    "GET"
+   ],
+   "endpoints": [
+    {
+     "methods": [
+      "GET"
+     ],
+     "args": []
+    }
+   ],
+   "_links": {
+    "self": [
+     {
+      "href": "https://eventsmanagerpro.com/support/wp-json/bbpress/v1/topic-prefixes"
+     }
+    ]
+   }
+  },
+  "/bbpress/v1/topics/(?P<id>[\\d]+)/prefixes": {
+   "namespace": "bbpress/v1",
+   "methods": [
+    "GET",
+    "POST",
+    "PUT",
+    "PATCH"
+   ],
+   "endpoints": [
+    {
+     "methods": [
+      "GET"
+     ],
+     "args": {
+      "id": {
+       "type": "integer",
+       "required": true
+      }
+     }
+    },
+    {
+     "methods": [
+      "POST",
+      "PUT",
+      "PATCH"
+     ],
+     "args": {
+      "id": {
+       "type": "integer",
+       "required": true
+      },
+      "prefixes": {
+       "type": "array",
+       "items": {
+        "type": [
+         "string",
+         "integer"
+        ]
+       },
+       "description": "Term IDs or slugs to assign. Pass an empty array to clear.",
+       "required": true
+      },
+      "mode": {
+       "type": "string",
+       "enum": [
+        "replace",
+        "append"
+       ],
+       "default": "replace",
+       "required": false
+      }
+     }
+    }
+   ]
+  },
+  "/bbpress/v1/canned-replies": {
+   "namespace": "bbpress/v1",
+   "methods": [
+    "GET",
+    "POST"
+   ],
+   "endpoints": [
+    {
+     "methods": [
+      "GET"
+     ],
+     "args": {
+      "page": {
+       "type": "integer",
+       "default": 1,
+       "required": false
+      },
+      "per_page": {
+       "type": "integer",
+       "default": 50,
+       "maximum": 100,
+       "required": false
+      },
+      "category": {
+       "type": "string",
+       "description": "Category slug or ID.",
+       "required": false
+      },
+      "search": {
+       "type": "string",
+       "required": false
+      }
+     }
+    },
+    {
+     "methods": [
+      "POST"
+     ],
+     "args": {
+      "title": {
+       "type": "string",
+       "required": true
+      },
+      "content": {
+       "type": "string",
+       "required": true
+      },
+      "categories": {
+       "type": "array",
+       "items": {
+        "type": [
+         "string",
+         "integer"
+        ]
+       },
+       "required": false
+      }
+     }
+    }
+   ],
+   "_links": {
+    "self": [
+     {
+      "href": "https://eventsmanagerpro.com/support/wp-json/bbpress/v1/canned-replies"
+     }
+    ]
+   }
+  },
+  "/bbpress/v1/canned-replies/(?P<id>[\\d]+)": {
+   "namespace": "bbpress/v1",
+   "methods": [
+    "GET",
+    "POST",
+    "PUT",
+    "PATCH",
+    "DELETE"
+   ],
+   "endpoints": [
+    {
+     "methods": [
+      "GET"
+     ],
+     "args": {
+      "id": {
+       "type": "integer",
+       "required": true
+      }
+     }
+    },
+    {
+     "methods": [
+      "POST",
+      "PUT",
+      "PATCH"
+     ],
+     "args": {
+      "id": {
+       "type": "integer",
+       "required": true
+      },
+      "title": {
+       "type": "string",
+       "required": false
+      },
+      "content": {
+       "type": "string",
+       "required": false
+      },
+      "categories": {
+       "type": "array",
+       "items": {
+        "type": [
+         "string",
+         "integer"
+        ]
+       },
+       "required": false
+      }
+     }
+    },
+    {
+     "methods": [
+      "DELETE"
+     ],
+     "args": {
+      "id": {
+       "type": "integer",
+       "required": true
+      }
+     }
+    }
+   ]
+  },
+  "/bbpress/v1/(?P<parent_type>topics|replies)/(?P<id>[\\d]+)/attachments": {
+   "namespace": "bbpress/v1",
+   "methods": [
+    "GET"
+   ],
+   "endpoints": [
+    {
+     "methods": [
+      "GET"
+     ],
+     "args": {
+      "parent_type": {
+       "type": "string",
+       "enum": [
+        "topics",
+        "replies"
+       ],
+       "required": false
+      },
+      "id": {
+       "type": "integer",
+       "required": true
+      }
+     }
+    }
+   ]
+  },
+  "/bbpress/v1/topics/(?P<id>[\\d]+)/ai-analysis": {
+   "namespace": "bbpress/v1",
+   "methods": [
+    "GET",
+    "POST"
+   ],
+   "endpoints": [
+    {
+     "methods": [
+      "GET"
+     ],
+     "args": {
+      "id": {
+       "type": "integer",
+       "required": true
+      }
+     }
+    },
+    {
+     "methods": [
+      "POST"
+     ],
+     "args": {
+      "id": {
+       "type": "integer",
+       "required": true
+      },
+      "force": {
+       "type": "boolean",
+       "default": false,
+       "description": "Force re-analysis even if cached.",
+       "required": false
+      }
+     }
+    }
+   ]
+  },
+  "/bbpress/v1/mcp/selftest": {
+   "namespace": "bbpress/v1",
+   "methods": [
+    "GET"
+   ],
+   "endpoints": [
+    {
+     "methods": [
+      "GET"
+     ],
+     "args": []
+    }
+   ],
+   "_links": {
+    "self": [
+     {
+      "href": "https://eventsmanagerpro.com/support/wp-json/bbpress/v1/mcp/selftest"
+     }
+    ]
+   }
+  },
+  "/wp/v2": {
+   "namespace": "wp/v2",
+   "methods": [
+    "GET"
+   ],
+   "endpoints": [
+    {
+     "methods": [
+      "GET"
+     ],
+     "args": {
+      "namespace": {
+       "default": "wp/v2",
+       "required": false
+      },
+      "context": {
+       "default": "view",
+       "required": false
+      }
+     }
+    }
+   ],
+   "_links": {
+    "self": [
+     {
+      "href": "https://eventsmanagerpro.com/support/wp-json/wp/v2"
+     }
+    ]
+   }
+  },
+  "/wp/v2/users": {
+   "namespace": "wp/v2",
+   "methods": [
+    "GET",
+    "POST"
+   ],
+   "endpoints": [
+    {
+     "methods": [
+      "GET"
+     ],
+     "allow_batch": {
+      "v1": true
+     },
+     "args": {
+      "context": {
+       "description": "Scope under which the request is made; determines fields present in response.",
+       "type": "string",
+       "enum": [
+        "view",
+        "embed",
+        "edit"
+       ],
+       "default": "view",
+       "required": false
+      },
+      "page": {
+       "description": "Current page of the collection.",
+       "type": "integer",
+       "default": 1,
+       "minimum": 1,
+       "required": false
+      },
+      "per_page": {
+       "description": "Maximum number of items to be returned in result set.",
+       "type": "integer",
+       "default": 10,
+       "minimum": 1,
+       "maximum": 100,
+       "required": false
+      },
+      "search": {
+       "description": "Limit results to those matching a string.",
+       "type": "string",
+       "required": false
+      },
+      "exclude": {
+       "description": "Ensure result set excludes specific IDs.",
+       "type": "array",
+       "items": {
+        "type": "integer"
+       },
+       "default": [],
+       "required": false
+      },
+      "include": {
+       "description": "Limit result set to specific IDs.",
+       "type": "array",
+       "items": {
+        "type": "integer"
+       },
+       "default": [],
+       "required": false
+      },
+      "offset": {
+       "description": "Offset the result set by a specific number of items.",
+       "type": "integer",
+       "required": false
+      },
+      "order": {
+       "default": "asc",
+       "description": "Order sort attribute ascending or descending.",
+       "enum": [
+        "asc",
+        "desc"
+       ],
+       "type": "string",
+       "required": false
+      },
+      "orderby": {
+       "default": "name",
+       "description": "Sort collection by user attribute.",
+       "enum": [
+        "id",
+        "include",
+        "name",
+        "registered_date",
+        "slug",
+        "include_slugs",
+        "email",
+        "url"
+       ],
+       "type": "string",
+       "required": false
+      },
+      "slug": {
+       "description": "Limit result set to users with one or more specific slugs.",
+       "type": "array",
+       "items": {
+        "type": "string"
+       },
+       "required": false
+      },
+      "roles": {
+       "description": "Limit result set to users matching at least one specific role provided. Accepts csv list or single role.",
+       "type": "array",
+       "items": {
+        "type": "string"
+       },
+       "required": false
+      },
+      "capabilities": {
+       "description": "Limit result set to users matching at least one specific capability provided. Accepts csv list or single capability.",
+       "type": "array",
+       "items": {
+        "type": "string"
+       },
+       "required": false
+      },
+      "who": {
+       "description": "Limit result set to users who are considered authors.",
+       "type": "string",
+       "enum": [
+        "authors"
+       ],
+       "required": false
+      },
+      "has_published_posts": {
+       "description": "Limit result set to users who have published posts.",
+       "type": [
+        "boolean",
+        "array"
+       ],
+       "items": {
+        "type": "string",
+        "enum": {
+         "post": "post",
+         "page": "page",
+         "attachment": "attachment",
+         "nav_menu_item": "nav_menu_item",
+         "wp_block": "wp_block",
+         "wp_template": "wp_template",
+         "wp_template_part": "wp_template_part",
+         "wp_global_styles": "wp_global_styles",
+         "wp_navigation": "wp_navigation",
+         "wp_font_family": "wp_font_family",
+         "wp_font_face": "wp_font_face"
+        }
+       },
+       "required": false
+      },
+      "search_columns": {
+       "default": [],
+       "description": "Array of column names to be searched.",
+       "type": "array",
+       "items": {
+        "enum": [
+         "email",
+         "name",
+         "id",
+         "username",
+         "slug"
+        ],
+        "type": "string"
+       },
+       "required": false
+      }
+     }
+    },
+    {
+     "methods": [
+      "POST"
+     ],
+     "allow_batch": {
+      "v1": true
+     },
+     "args": {
+      "username": {
+       "description": "Login name for the user.",
+       "type": "string",
+       "required": true
+      },
+      "name": {
+       "description": "Display name for the user.",
+       "type": "string",
+       "required": false
+      },
+      "first_name": {
+       "description": "First name for the user.",
+       "type": "string",
+       "required": false
+      },
+      "last_name": {
+       "description": "Last name for the user.",
+       "type": "string",
+       "required": false
+      },
+      "email": {
+       "description": "The email address for the user.",
+       "type": "string",
+       "format": "email",
+       "required": true
+      },
+      "url": {
+       "description": "URL of the user.",
+       "type": "string",
+       "format": "uri",
+       "required": false
+      },
+      "description": {
+       "description": "Description of the user.",
+       "type": "string",
+       "required": false
+      },
+      "locale": {
+       "description": "Locale for the user.",
+       "type": "string",
+       "enum": [
+        "",
+        "en_US"
+       ],
+       "required": false
+      },
+      "nickname": {
+       "description": "The nickname for the user.",
+       "type": "string",
+       "required": false
+      },
+      "slug": {
+       "description": "An alphanumeric identifier for the user.",
+       "type": "string",
+       "required": false
+      },
+      "roles": {
+       "description": "Roles assigned to the user.",
+       "type": "array",
+       "items": {
+        "type": "string"
+       },
+       "required": false
+      },
+      "password": {
+       "description": "Password for the user (never included).",
+       "type": "string",
+       "required": true
+      },
+      "meta": {
+       "description": "Meta fields.",
+       "type": "object",
+       "properties": {
+        "_bbp_topic_count": {
+         "type": "integer",
+         "title": "",
+         "description": "bbPress Item Count",
+         "default": 0
+        },
+        "_bbp_reply_count": {
+         "type": "integer",
+         "title": "",
+         "description": "bbPress Item Count",
+         "default": 0
+        },
+        "_bbp_last_posted": {
+         "type": "integer",
+         "title": "",
+         "description": "bbPress User Activity",
+         "default": 0
+        },
+        "persisted_preferences": {
+         "type": "object",
+         "title": "",
+         "description": "",
+         "default": [],
+         "context": [
+          "edit"
+         ],
+         "properties": {
+          "_modified": {
+           "description": "The date and time the preferences were updated.",
+           "type": "string",
+           "format": "date-time",
+           "readonly": false
+          }
+         },
+         "additionalProperties": true
+        }
+       },
+       "required": false
+      }
+     }
+    }
+   ],
+   "_links": {
+    "self": [
+     {
+      "href": "https://eventsmanagerpro.com/support/wp-json/wp/v2/users"
+     }
+    ]
+   }
+  },
+  "/wp/v2/users/(?P<id>[\\d]+)": {
+   "namespace": "wp/v2",
+   "methods": [
+    "GET",
+    "POST",
+    "PUT",
+    "PATCH",
+    "DELETE"
+   ],
+   "endpoints": [
+    {
+     "methods": [
+      "GET"
+     ],
+     "allow_batch": {
+      "v1": true
+     },
+     "args": {
+      "id": {
+       "description": "Unique identifier for the user.",
+       "type": "integer",
+       "required": false
+      },
+      "context": {
+       "description": "Scope under which the request is made; determines fields present in response.",
+       "type": "string",
+       "enum": [
+        "view",
+        "embed",
+        "edit"
+       ],
+       "default": "view",
+       "required": false
+      }
+     }
+    },
+    {
+     "methods": [
+      "POST",
+      "PUT",
+      "PATCH"
+     ],
+     "allow_batch": {
+      "v1": true
+     },
+     "args": {
+      "id": {
+       "description": "Unique identifier for the user.",
+       "type": "integer",
+       "required": false
+      },
+      "username": {
+       "description": "Login name for the user.",
+       "type": "string",
+       "required": false
+      },
+      "name": {
+       "description": "Display name for the user.",
+       "type": "string",
+       "required": false
+      },
+      "first_name": {
+       "description": "First name for the user.",
+       "type": "string",
+       "required": false
+      },
+      "last_name": {
+       "description": "Last name for the user.",
+       "type": "string",
+       "required": false
+      },
+      "email": {
+       "description": "The email address for the user.",
+       "type": "string",
+       "format": "email",
+       "required": false
+      },
+      "url": {
+       "description": "URL of the user.",
+       "type": "string",
+       "format": "uri",
+       "required": false
+      },
+      "description": {
+       "description": "Description of the user.",
+       "type": "string",
+       "required": false
+      },
+      "locale": {
+       "description": "Locale for the user.",
+       "type": "string",
+       "enum": [
+        "",
+        "en_US"
+       ],
+       "required": false
+      },
+      "nickname": {
+       "description": "The nickname for the user.",
+       "type": "string",
+       "required": false
+      },
+      "slug": {
+       "description": "An alphanumeric identifier for the user.",
+       "type": "string",
+       "required": false
+      },
+      "roles": {
+       "description": "Roles assigned to the user.",
+       "type": "array",
+       "items": {
+        "type": "string"
+       },
+       "required": false
+      },
+      "password": {
+       "description": "Password for the user (never included).",
+       "type": "string",
+       "required": false
+      },
+      "meta": {
+       "description": "Meta fields.",
+       "type": "object",
+       "properties": {
+        "_bbp_topic_count": {
+         "type": "integer",
+         "title": "",
+         "description": "bbPress Item Count",
+         "default": 0
+        },
+        "_bbp_reply_count": {
+         "type": "integer",
+         "title": "",
+         "description": "bbPress Item Count",
+         "default": 0
+        },
+        "_bbp_last_posted": {
+         "type": "integer",
+         "title": "",
+         "description": "bbPress User Activity",
+         "default": 0
+        },
+        "persisted_preferences": {
+         "type": "object",
+         "title": "",
+         "description": "",
+         "default": [],
+         "context": [
+          "edit"
+         ],
+         "properties": {
+          "_modified": {
+           "description": "The date and time the preferences were updated.",
+           "type": "string",
+           "format": "date-time",
+           "readonly": false
+          }
+         },
+         "additionalProperties": true
+        }
+       },
+       "required": false
+      }
+     }
+    },
+    {
+     "methods": [
+      "DELETE"
+     ],
+     "allow_batch": {
+      "v1": true
+     },
+     "args": {
+      "id": {
+       "description": "Unique identifier for the user.",
+       "type": "integer",
+       "required": false
+      },
+      "force": {
+       "type": "boolean",
+       "default": false,
+       "description": "Required to be true, as users do not support trashing.",
+       "required": false
+      },
+      "reassign": {
+       "type": "integer",
+       "description": "Reassign the deleted user's posts and links to this user ID.",
+       "required": true
+      }
+     }
+    }
+   ]
+  },
+  "/wp/v2/users/me": {
+   "namespace": "wp/v2",
+   "methods": [
+    "GET",
+    "POST",
+    "PUT",
+    "PATCH",
+    "DELETE"
+   ],
+   "endpoints": [
+    {
+     "methods": [
+      "GET"
+     ],
+     "args": {
+      "context": {
+       "description": "Scope under which the request is made; determines fields present in response.",
+       "type": "string",
+       "enum": [
+        "view",
+        "embed",
+        "edit"
+       ],
+       "default": "view",
+       "required": false
+      }
+     }
+    },
+    {
+     "methods": [
+      "POST",
+      "PUT",
+      "PATCH"
+     ],
+     "args": {
+      "username": {
+       "description": "Login name for the user.",
+       "type": "string",
+       "required": false
+      },
+      "name": {
+       "description": "Display name for the user.",
+       "type": "string",
+       "required": false
+      },
+      "first_name": {
+       "description": "First name for the user.",
+       "type": "string",
+       "required": false
+      },
+      "last_name": {
+       "description": "Last name for the user.",
+       "type": "string",
+       "required": false
+      },
+      "email": {
+       "description": "The email address for the user.",
+       "type": "string",
+       "format": "email",
+       "required": false
+      },
+      "url": {
+       "description": "URL of the user.",
+       "type": "string",
+       "format": "uri",
+       "required": false
+      },
+      "description": {
+       "description": "Description of the user.",
+       "type": "string",
+       "required": false
+      },
+      "locale": {
+       "description": "Locale for the user.",
+       "type": "string",
+       "enum": [
+        "",
+        "en_US"
+       ],
+       "required": false
+      },
+      "nickname": {
+       "description": "The nickname for the user.",
+       "type": "string",
+       "required": false
+      },
+      "slug": {
+       "description": "An alphanumeric identifier for the user.",
+       "type": "string",
+       "required": false
+      },
+      "roles": {
+       "description": "Roles assigned to the user.",
+       "type": "array",
+       "items": {
+        "type": "string"
+       },
+       "required": false
+      },
+      "password": {
+       "description": "Password for the user (never included).",
+       "type": "string",
+       "required": false
+      },
+      "meta": {
+       "description": "Meta fields.",
+       "type": "object",
+       "properties": {
+        "_bbp_topic_count": {
+         "type": "integer",
+         "title": "",
+         "description": "bbPress Item Count",
+         "default": 0
+        },
+        "_bbp_reply_count": {
+         "type": "integer",
+         "title": "",
+         "description": "bbPress Item Count",
+         "default": 0
+        },
+        "_bbp_last_posted": {
+         "type": "integer",
+         "title": "",
+         "description": "bbPress User Activity",
+         "default": 0
+        },
+        "persisted_preferences": {
+         "type": "object",
+         "title": "",
+         "description": "",
+         "default": [],
+         "context": [
+          "edit"
+         ],
+         "properties": {
+          "_modified": {
+           "description": "The date and time the preferences were updated.",
+           "type": "string",
+           "format": "date-time",
+           "readonly": false
+          }
+         },
+         "additionalProperties": true
+        }
+       },
+       "required": false
+      }
+     }
+    },
+    {
+     "methods": [
+      "DELETE"
+     ],
+     "args": {
+      "force": {
+       "type": "boolean",
+       "default": false,
+       "description": "Required to be true, as users do not support trashing.",
+       "required": false
+      },
+      "reassign": {
+       "type": "integer",
+       "description": "Reassign the deleted user's posts and links to this user ID.",
+       "required": true
+      }
+     }
+    }
+   ],
+   "_links": {
+    "self": [
+     {
+      "href": "https://eventsmanagerpro.com/support/wp-json/wp/v2/users/me"
+     }
+    ]
+   }
+  },
+  "/wp/v2/users/(?P<user_id>(?:[\\d]+|me))/application-passwords": {
+   "namespace": "wp/v2",
+   "methods": [
+    "GET",
+    "POST",
+    "DELETE"
+   ],
+   "endpoints": [
+    {
+     "methods": [
+      "GET"
+     ],
+     "args": {
+      "context": {
+       "description": "Scope under which the request is made; determines fields present in response.",
+       "type": "string",
+       "enum": [
+        "view",
+        "embed",
+        "edit"
+       ],
+       "default": "view",
+       "required": false
+      }
+     }
+    },
+    {
+     "methods": [
+      "POST"
+     ],
+     "args": {
+      "app_id": {
+       "description": "A UUID provided by the application to uniquely identify it. It is recommended to use an UUID v5 with the URL or DNS namespace.",
+       "type": "string",
+       "oneOf": [
+        {
+         "type": "string",
+         "format": "uuid"
+        },
+        {
+         "type": "string",
+         "enum": [
+          ""
+         ]
+        }
+       ],
+       "required": false
+      },
+      "name": {
+       "description": "The name of the application password.",
+       "type": "string",
+       "minLength": 1,
+       "pattern": ".*\\S.*",
+       "required": true
+      }
+     }
+    },
+    {
+     "methods": [
+      "DELETE"
+     ],
+     "args": []
+    }
+   ]
+  },
+  "/wp/v2/settings": {
+   "namespace": "wp/v2",
+   "methods": [
+    "GET",
+    "POST",
+    "PUT",
+    "PATCH"
+   ],
+   "endpoints": [
+    {
+     "methods": [
+      "GET"
+     ],
+     "args": []
+    },
+    {
+     "methods": [
+      "POST",
+      "PUT",
+      "PATCH"
+     ],
+     "args": {
+      "title": {
+       "title": "Title",
+       "description": "Site title.",
+       "type": "string",
+       "required": false
+      },
+      "description": {
+       "title": "Tagline",
+       "description": "Site tagline.",
+       "type": "string",
+       "required": false
+      },
+      "url": {
+       "title": "",
+       "description": "Site URL.",
+       "type": "string",
+       "format": "uri",
+       "required": false
+      },
+      "email": {
+       "title": "",
+       "description": "This address is used for admin purposes, like new user notification.",
+       "type": "string",
+       "format": "email",
+       "required": false
+      },
+      "timezone": {
+       "title": "",
+       "description": "A city in the same timezone as you.",
+       "type": "string",
+       "required": false
+      },
+      "date_format": {
+       "title": "",
+       "description": "A date format for all date strings.",
+       "type": "string",
+       "required": false
+      },
+      "time_format": {
+       "title": "",
+       "description": "A time format for all time strings.",
+       "type": "string",
+       "required": false
+      },
+      "start_of_week": {
+       "title": "",
+       "description": "A day number of the week that the week should start on.",
+       "type": "integer",
+       "required": false
+      },
+      "language": {
+       "title": "",
+       "description": "WordPress locale code.",
+       "type": "string",
+       "required": false
+      },
+      "use_smilies": {
+       "title": "",
+       "description": "Convert emoticons like :-) and :-P to graphics on display.",
+       "type": "boolean",
+       "required": false
+      },
+      "default_category": {
+       "title": "",
+       "description": "Default post category.",
+       "type": "integer",
+       "required": false
+      },
+      "default_post_format": {
+       "title": "",
+       "description": "Default post format.",
+       "type": "string",
+       "required": false
+      },
+      "posts_per_page": {
+       "title": "Maximum posts per page",
+       "description": "Blog pages show at most.",
+       "type": "integer",
+       "required": false
+      },
+      "show_on_front": {
+       "title": "Show on front",
+       "description": "What to show on the front page",
+       "type": "string",
+       "required": false
+      },
+      "page_on_front": {
+       "title": "Page on front",
+       "description": "The ID of the page that should be displayed on the front page",
+       "type": "integer",
+       "required": false
+      },
+      "page_for_posts": {
+       "title": "",
+       "description": "The ID of the page that should display the latest posts",
+       "type": "integer",
+       "required": false
+      },
+      "default_ping_status": {
+       "title": "",
+       "description": "Allow link notifications from other blogs (pingbacks and trackbacks) on new articles.",
+       "type": "string",
+       "enum": [
+        "open",
+        "closed"
+       ],
+       "required": false
+      },
+      "default_comment_status": {
+       "title": "Allow comments on new posts",
+       "description": "Allow people to submit comments on new posts.",
+       "type": "string",
+       "enum": [
+        "open",
+        "closed"
+       ],
+       "required": false
+      },
+      "site_logo": {
+       "title": "Logo",
+       "description": "Site logo.",
+       "type": "integer",
+       "required": false
+      },
+      "site_icon": {
+       "title": "Icon",
+       "description": "Site icon.",
+       "type": "integer",
+       "required": false
+      }
+     }
+    }
+   ],
+   "_links": {
+    "self": [
+     {
+      "href": "https://eventsmanagerpro.com/support/wp-json/wp/v2/settings"
+     }
+    ]
+   }
+  },
+  "/wp/v2/plugins": {
+   "namespace": "wp/v2",
+   "methods": [
+    "GET",
+    "POST"
+   ],
+   "endpoints": [
+    {
+     "methods": [
+      "GET"
+     ],
+     "args": {
+      "context": {
+       "description": "Scope under which the request is made; determines fields present in response.",
+       "type": "string",
+       "enum": [
+        "view",
+        "embed",
+        "edit"
+       ],
+       "default": "view",
+       "required": false
+      },
+      "search": {
+       "description": "Limit results to those matching a string.",
+       "type": "string",
+       "required": false
+      },
+      "status": {
+       "description": "Limits results to plugins with the given status.",
+       "type": "array",
+       "items": {
+        "type": "string",
+        "enum": [
+         "inactive",
+         "active"
+        ]
+       },
+       "required": false
+      }
+     }
+    },
+    {
+     "methods": [
+      "POST"
+     ],
+     "args": {
+      "slug": {
+       "type": "string",
+       "description": "WordPress.org plugin directory slug.",
+       "pattern": "[\\w\\-]+",
+       "required": true
+      },
+      "status": {
+       "description": "The plugin activation status.",
+       "type": "string",
+       "enum": [
+        "inactive",
+        "active"
+       ],
+       "default": "inactive",
+       "required": false
+      }
+     }
+    }
+   ],
+   "_links": {
+    "self": [
+     {
+      "href": "https://eventsmanagerpro.com/support/wp-json/wp/v2/plugins"
+     }
+    ]
+   }
+  },
+  "/wp/v2/plugins/(?P<plugin>[^.\\/]+(?:\\/[^.\\/]+)?)": {
+   "namespace": "wp/v2",
+   "methods": [
+    "GET",
+    "POST",
+    "PUT",
+    "PATCH",
+    "DELETE"
+   ],
+   "endpoints": [
+    {
+     "methods": [
+      "GET"
+     ],
+     "args": {
+      "context": {
+       "description": "Scope under which the request is made; determines fields present in response.",
+       "type": "string",
+       "enum": [
+        "view",
+        "embed",
+        "edit"
+       ],
+       "default": "view",
+       "required": false
+      },
+      "plugin": {
+       "type": "string",
+       "pattern": "[^.\\/]+(?:\\/[^.\\/]+)?",
+       "required": false
+      }
+     }
+    },
+    {
+     "methods": [
+      "POST",
+      "PUT",
+      "PATCH"
+     ],
+     "args": {
+      "context": {
+       "description": "Scope under which the request is made; determines fields present in response.",
+       "type": "string",
+       "enum": [
+        "view",
+        "embed",
+        "edit"
+       ],
+       "default": "view",
+       "required": false
+      },
+      "plugin": {
+       "type": "string",
+       "pattern": "[^.\\/]+(?:\\/[^.\\/]+)?",
+       "required": false
+      },
+      "status": {
+       "description": "The plugin activation status.",
+       "type": "string",
+       "enum": [
+        "inactive",
+        "active"
+       ],
+       "required": false
+      }
+     }
+    },
+    {
+     "methods": [
+      "DELETE"
+     ],
+     "args": {
+      "context": {
+       "description": "Scope under which the request is made; determines fields present in response.",
+       "type": "string",
+       "enum": [
+        "view",
+        "embed",
+        "edit"
+       ],
+       "default": "view",
+       "required": false
+      },
+      "plugin": {
+       "type": "string",
+       "pattern": "[^.\\/]+(?:\\/[^.\\/]+)?",
+       "required": false
+      }
+     }
+    }
+   ]
+  },
+  "/wp-abilities/v1": {
+   "namespace": "wp-abilities/v1",
+   "methods": [
+    "GET"
+   ],
+   "endpoints": [
+    {
+     "methods": [
+      "GET"
+     ],
+     "args": {
+      "namespace": {
+       "default": "wp-abilities/v1",
+       "required": false
+      },
+      "context": {
+       "default": "view",
+       "required": false
+      }
+     }
+    }
+   ],
+   "_links": {
+    "self": [
+     {
+      "href": "https://eventsmanagerpro.com/support/wp-json/wp-abilities/v1"
+     }
+    ]
+   }
+  },
+  "/wp-abilities/v1/categories": {
+   "namespace": "wp-abilities/v1",
+   "methods": [
+    "GET"
+   ],
+   "endpoints": [
+    {
+     "methods": [
+      "GET"
+     ],
+     "args": {
+      "context": {
+       "description": "Scope under which the request is made; determines fields present in response.",
+       "type": "string",
+       "enum": [
+        "view",
+        "embed",
+        "edit"
+       ],
+       "default": "view",
+       "required": false
+      },
+      "page": {
+       "description": "Current page of the collection.",
+       "type": "integer",
+       "default": 1,
+       "minimum": 1,
+       "required": false
+      },
+      "per_page": {
+       "description": "Maximum number of items to be returned in result set.",
+       "type": "integer",
+       "default": 50,
+       "minimum": 1,
+       "maximum": 100,
+       "required": false
+      }
+     }
+    }
+   ],
+   "_links": {
+    "self": [
+     {
+      "href": "https://eventsmanagerpro.com/support/wp-json/wp-abilities/v1/categories"
+     }
+    ]
+   }
+  },
+  "/wp-abilities/v1/categories/(?P<slug>[a-z0-9]+(?:-[a-z0-9]+)*)": {
+   "namespace": "wp-abilities/v1",
+   "methods": [
+    "GET"
+   ],
+   "endpoints": [
+    {
+     "methods": [
+      "GET"
+     ],
+     "args": {
+      "slug": {
+       "description": "Unique identifier for the ability category.",
+       "type": "string",
+       "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+       "required": false
+      }
+     }
+    }
+   ]
+  },
+  "/wp-abilities/v1/abilities/(?P<name>[a-zA-Z0-9\\-\\/]+?)/run": {
+   "namespace": "wp-abilities/v1",
+   "methods": [
+    "GET",
+    "POST",
+    "PUT",
+    "PATCH",
+    "DELETE"
+   ],
+   "endpoints": [
+    {
+     "methods": [
+      "GET",
+      "POST",
+      "PUT",
+      "PATCH",
+      "DELETE"
+     ],
+     "args": {
+      "name": {
+       "description": "Unique identifier for the ability.",
+       "type": "string",
+       "pattern": "^[a-zA-Z0-9\\-\\/]+$",
+       "required": false
+      },
+      "input": {
+       "description": "Input parameters for the ability execution.",
+       "type": [
+        "integer",
+        "number",
+        "boolean",
+        "string",
+        "array",
+        "object",
+        "null"
+       ],
+       "default": null,
+       "required": false
+      }
+     }
+    }
+   ]
+  },
+  "/wp-abilities/v1/abilities": {
+   "namespace": "wp-abilities/v1",
+   "methods": [
+    "GET"
+   ],
+   "endpoints": [
+    {
+     "methods": [
+      "GET"
+     ],
+     "args": {
+      "context": {
+       "description": "Scope under which the request is made; determines fields present in response.",
+       "type": "string",
+       "enum": [
+        "view",
+        "embed",
+        "edit"
+       ],
+       "default": "view",
+       "required": false
+      },
+      "page": {
+       "description": "Current page of the collection.",
+       "type": "integer",
+       "default": 1,
+       "minimum": 1,
+       "required": false
+      },
+      "per_page": {
+       "description": "Maximum number of items to be returned in result set.",
+       "type": "integer",
+       "default": 50,
+       "minimum": 1,
+       "maximum": 100,
+       "required": false
+      },
+      "category": {
+       "description": "Limit results to abilities in specific ability category.",
+       "type": "string",
+       "required": false
+      }
+     }
+    }
+   ],
+   "_links": {
+    "self": [
+     {
+      "href": "https://eventsmanagerpro.com/support/wp-json/wp-abilities/v1/abilities"
+     }
+    ]
+   }
+  },
+  "/wp-abilities/v1/abilities/(?P<name>[a-zA-Z0-9\\-\\/]+)": {
+   "namespace": "wp-abilities/v1",
+   "methods": [
+    "GET"
+   ],
+   "endpoints": [
+    {
+     "methods": [
+      "GET"
+     ],
+     "args": {
+      "name": {
+       "description": "Unique identifier for the ability.",
+       "type": "string",
+       "pattern": "^[a-zA-Z0-9\\-\\/]+$",
+       "required": false
+      }
+     }
+    }
+   ]
+  }
+ },
+ "_links": {
+  "help": [
+   {
+    "href": "https://developer.wordpress.org/rest-api/"
+   }
+  ]
+ }
+}

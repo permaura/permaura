@@ -1,0 +1,11 @@
+{
+  "checkpoint_id": null,
+  "hold_id": null,
+  "hold_version": 1,
+  "reason": "provisioned",
+  "retained_ref": null,
+  "set_at": "2026-09-22T03:17:33Z",
+  "set_by": "operator@example.com",
+  "state": "open",
+  "tenant": "acme"
+}

@@ -1,0 +1,18 @@
+PERMAURA GATEWAY: THIRD-PARTY NOTICES
+
+The Permaura gateway is licensed under the Apache License, Version 2.0; see the LICENSE and
+NOTICE files distributed alongside it. It is built with the open-source packages listed below,
+each of which remains under its own licence. This file is generated from the dependency tree
+that actually ships in the released binaries.
+
+{{#each licenses}}
+================================================================================
+{{{name}}}
+================================================================================
+
+Applies to:
+{{#each used_by}}  - {{{crate.name}}} {{{crate.version}}}{{#if crate.repository}}  ({{{crate.repository}}}){{/if}}
+{{/each}}
+{{{text}}}
+
+{{/each}}

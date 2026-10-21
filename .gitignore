@@ -1,0 +1,54 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Builds
+dist/
+build/
+__pycache__/
+.next/
+out/
+target/
+*.tsbuildinfo
+
+# Tauri
+apps/*/src-tauri/target/
+apps/*/src-tauri/gen/
+
+# Env / secrets: never commit real ones
+.env
+.env.*
+*.local
+
+# OS / editor noise
+.DS_Store
+.idea/
+.vscode/
+*.log
+
+# Permaura local state
+.permaura/
+*.sqlite
+*.sqlite-journal
+.gstack/
+.neon
+
+# Offline connector-signing secret: never commit
+*.pmconn.key
+pmconn-signing-key*
+
+# Per-branch notes: a machine-local symlink some worktree setups create.
+# Machine-local plumbing, never committed (it was, once, pointing at a stale branch).
+_context
+
+# Copied in from the repo root at publish time so the npm package carries the licence texts.
+# Not committed: two copies of a licence is how one of them goes stale.
+packages/gateway/LICENSE
+packages/gateway/NOTICE
+packages/mcp-stdio/LICENSE
+packages/mcp-stdio/NOTICE
+
+# Generated at release time from Cargo.lock by cargo-about. Derived output: committing it means
+# shipping whatever it said the last time someone remembered to regenerate it.
+THIRD-PARTY-NOTICES.txt
+target-alpine/

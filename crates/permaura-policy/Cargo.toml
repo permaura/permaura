@@ -1,0 +1,15 @@
+[package]
+name = "permaura-policy"
+description = "Permaura policy engine: deny-by-default evaluation of grants and policies into decisions."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+permaura-core = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+time = { workspace = true }

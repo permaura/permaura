@@ -1,0 +1,63 @@
+{
+  "name": "@permaura/mcp-stdio",
+  "version": "0.1.0",
+  "description": "Local STDIO MCP server that bridges the permaura_* tools to a Permaura gateway: give agents capabilities, not keys.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pixelitemedia/permaura.git",
+    "directory": "packages/mcp-stdio"
+  },
+  "homepage": "https://permaura.com",
+  "keywords": [
+    "permaura",
+    "mcp",
+    "model-context-protocol",
+    "mcp-server",
+    "ai",
+    "agents",
+    "security"
+  ],
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "permaura-mcp": "dist/cli.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "start": "node dist/cli.js",
+    "test": "tsup && node --test",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist",
+    "prepack": "tsup && cp ../../LICENSE ../../NOTICE .",
+    "prepublishOnly": "npm test"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "tsup": "^8.3.0",
+    "typescript": "^5.6.3"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

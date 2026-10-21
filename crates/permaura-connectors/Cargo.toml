@@ -1,0 +1,49 @@
+[package]
+name = "permaura-connectors"
+description = "Permaura connectors: HTTP and command client abstractions plus built-in GenericHttp, GitHub, Braintree, Vercel and Vercel-CLI connectors."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[features]
+# The real SSH/SFTP transport (russh) for the SSH connector. Off by default so the crate, and
+# the gateway's default build and its whole test suite, compile with NO SSH dependency and run
+# against the deterministic `MockSshRunner`, exactly like the KMS backend ships inert until a real
+# client is linked. A deployment that must actually reach a host builds with `--features ssh-transport`.
+ssh-transport = ["dep:russh", "dep:russh-sftp", "dep:tracing"]
+# An unscreened loopback client for other crates' integration tests; never enabled by a shipped build.
+test-support = []
+
+[dependencies]
+permaura-core = { workspace = true }
+permaura-platform = { workspace = true, features = ["child"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+# Basic-auth header encoding for imported/preset capabilities (AuthScheme::Basic); SFTP get/put content.
+base64 = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+reqwest = { workspace = true }
+# A request body that carries a credential goes to the HTTP stack as `Bytes` over a buffer that wipes itself when the stack releases it.
+bytes = "1"
+# Needed by RealCommandRunner (tokio::process + tokio::time timeout) for the command connector.
+tokio = { workspace = true }
+# The SSH credential (private key / password) is held in a zeroizing buffer for the minimal window
+# auth needs it and wiped the instant the invocation drops, the connector-side mirror of core's OpenedSecret.
+zeroize = { workspace = true }
+# An imported path parameter's own route pattern (a WordPress route regex) decides whether its value may hold a '/'.
+regex = "1"
+
+# The real SSH/SFTP transport, behind the `ssh-transport` feature. Pinned to the `ring` crypto backend
+# (not the default aws-lc-rs) to match the `ring` already in the workspace and avoid a C/cmake build.
+russh = { version = "0.62", optional = true, default-features = false, features = ["ring", "flate2"] }
+russh-sftp = { version = "2", optional = true }
+# Only for the real transport's host-key-verification warnings (feature-gated).
+tracing = { workspace = true, optional = true }
+
+[dev-dependencies]
+tokio = { workspace = true }

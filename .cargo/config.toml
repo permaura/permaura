@@ -1,0 +1,21 @@
+# Windows builds link the MSVC C runtime STATICALLY.
+#
+# A fresh Windows 11 install has no `vcruntime140.dll`, `vcruntime140_1.dll` or `msvcp140.dll`: those
+# arrive with the Visual C++ redistributable, which ships with Visual Studio and with the GitHub
+# Actions runner images but not with the OS. A dynamically-linked gateway therefore exits
+# 0xC0000135 (STATUS_DLL_NOT_FOUND) before it reaches `main`, printing nothing at all, on every
+# clean machine, which is what a user's machine is.
+#
+# This lives in `.cargo/config.toml` rather than in the release workflow's RUSTFLAGS so that every
+# build of these targets is static: CI, a release, and a developer's `cargo build --target
+# x86_64-pc-windows-msvc` alike. A flag only the release job sets is a flag the next person to add a
+# Windows lane will not know about.
+#
+# `scripts/check-windows-imports.mjs` is the guard that makes it stick: it reads the shipped .exe's
+# import table and fails the release if any CRT DLL is named there. Setting RUSTFLAGS in the
+# environment overrides this file entirely, so the guard, not this comment, is what catches that.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
+
+[target.aarch64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]

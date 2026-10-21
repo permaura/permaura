@@ -1,0 +1,42 @@
+{
+  "name": "permaura",
+  "version": "1.4.0",
+  "description": "Run the Permaura gateway with one command. Give your AI agents permission, not keys. `npm i -g permaura` then `permaura start --pair <code>` installs the gateway, starts it, and connects it to your permaura.com account.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "bin": {
+    "permaura": "bin/cli.mjs"
+  },
+  "files": [
+    "bin",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "homepage": "https://permaura.com",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pixelitemedia/permaura.git",
+    "directory": "packages/gateway"
+  },
+  "keywords": [
+    "permaura",
+    "ai",
+    "agents",
+    "mcp",
+    "gateway",
+    "security",
+    "capabilities",
+    "permissions"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "test": "node --test",
+    "prepack": "cp ../../LICENSE ../../NOTICE ."
+  }
+}

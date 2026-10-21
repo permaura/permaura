@@ -1,0 +1,89 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/permaura-core",
+    "crates/permaura-platform",
+    "crates/permaura-credential-store",
+    "crates/permaura-policy",
+    "crates/permaura-connectors",
+    "crates/permaura-relay",
+    "crates/permaura-daemon",
+    "services/gateway",
+]
+
+[workspace.package]
+version = "1.4.0"
+edition = "2021"
+# Workspace MSRV: a floor, and a resolver control. The v3 MSRV-aware resolver keeps dependency selection from silently jumping to crates that need a newer toolchain than this, so a bare `cargo update` can't drag in 69 crates of edition-2024 churn (clap 4.6, new crypto stack) as a side effect of a security bump.
+# Everything that builds core runs `stable` and users get prebuilt binaries, but README.md gives this floor to anyone building from source, so CI runs scripts/check-rust-floor.mjs to fail a manifest that names a crate needing more.
+# Raise it deliberately when a security fix needs it, as here: 1.88 is the floor that lets the quinn/time RustSec fixes resolve.
+rust-version = "1.88"
+license = "Apache-2.0"
+authors = ["Pixelite SL"]
+repository = "https://github.com/pixelitemedia/permaura"
+
+[workspace.dependencies]
+# Shared internal crates. Path deps are filled in by each crate's own manifest.
+permaura-platform = { path = "crates/permaura-platform" }
+permaura-core = { path = "crates/permaura-core", version = "1.0.0" }
+permaura-credential-store = { path = "crates/permaura-credential-store", version = "1.0.0" }
+permaura-policy = { path = "crates/permaura-policy", version = "1.0.0" }
+permaura-connectors = { path = "crates/permaura-connectors", version = "1.0.0" }
+permaura-relay = { path = "crates/permaura-relay", version = "1.0.0" }
+permaura-gateway = { path = "services/gateway", version = "1.0.0" }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+# float_roundtrip: the audit chain hashes a re-serialized payload, so a float must re-read to the exact value it was written from.
+serde_json = { version = "1", features = ["float_roundtrip"] }
+
+# Errors
+thiserror = "1"
+anyhow = "1"
+
+# Async
+async-trait = "0.1"
+tokio = { version = "1", features = ["full"] }
+
+# HTTP server / middleware / web framework
+axum = "0.7"
+tower = "0.5"
+tower-http = { version = "0.6", features = ["trace", "cors"] }
+
+# Tracing / logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# CLI
+clap = { version = "4", features = ["derive", "env"] }
+# Masked terminal input. A passphrase must never be a CLI argument (shell history, `ps`) and must
+# never echo, and doing that portably needs the platform console APIs.
+rpassword = "7"
+
+# Optional embedded SQLite store (behind the gateway "sqlite" feature)
+rusqlite = { version = "0.32", features = ["bundled"] }
+
+# Crypto: envelope encryption, KDF, signing, hashing
+aes-gcm = "0.10"
+chacha20poly1305 = "0.10"
+argon2 = "0.5"
+ed25519-dalek = { version = "2", features = ["rand_core"] }
+sha2 = "0.10"
+base64 = "0.22"
+rand = "0.8"
+rand_core = "0.6"
+zeroize = { version = "1.9", features = ["derive"] }
+
+# Time
+time = { version = "0.3", features = ["serde", "macros", "formatting", "parsing"] }
+
+# HTTP: rustls only, no native-tls/openssl
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+
+# WebSocket client for the relay worker dial-out (rustls).
+tokio-tungstenite = { version = "0.24", features = ["rustls-tls-native-roots", "connect"] }
+futures-util = "0.3"
+
+# Dependencies build optimized even in dev and test builds, because the test suite spends most of its time inside them: Argon2 in the bundle tests, Ed25519 and SQLite in the audit tests. Unoptimized, they held the Linux CI lane near 30 minutes. Workspace crates stay unoptimized, so stepping through our own code is unchanged.
+[profile.dev.package."*"]
+opt-level = 2

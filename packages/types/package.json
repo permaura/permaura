@@ -1,0 +1,39 @@
+{
+  "name": "@permaura/types",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Canonical TypeScript domain contract for Permaura: zod schemas and inferred types for principals, resources, actions, grants, decisions, capabilities, audit events, REST DTOs, and the permaura.* MCP tool params.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pixelitemedia/permaura.git",
+    "directory": "packages/types"
+  },
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist", "src", "README.md"],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "tsup": "^8.3.0",
+    "typescript": "^5.6.3"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

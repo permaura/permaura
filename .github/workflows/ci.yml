@@ -1,0 +1,200 @@
+# CI for every pull request and push to main that changes more than documentation: the Rust workspace tests, doctests and feature-combination
+# checks, the npm launcher, MCP stdio bridge and SDK tests, clippy (advisory), cargo audit and gitleaks.
+#
+# The test job runs on Linux by default, adds the Windows and macOS lanes when a manual dispatch
+# selects them, and runs all three on every event in pixelitemedia/permaura.
+name: ci
+
+on:
+  pull_request:
+    paths-ignore: ['**.md', 'docs/**']
+  push:
+    branches: [main]
+    paths-ignore: ['**.md', 'docs/**']
+  workflow_dispatch:
+    inputs:
+      macos:
+        description: run the macOS lane
+        type: boolean
+        default: false
+      windows:
+        description: run the Windows lane
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+# Keyed on the event as well as the ref, because they are no longer the same axis: a manual
+# macOS-lane dispatch targets refs/heads/main, and without the event in the key it would cancel the
+# push CI for the commit it was meant to be checking alongside. Push-vs-push on a ref, the case this
+# is actually here for, still shares a group and still cancels.
+concurrency:
+  group: ci-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: test ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    # The test binaries each statically link the gateway, and their debuginfo filled the runner's disk until ld died with SIGBUS (signal 7: its mmap of the output fails on a full disk), with full debuginfo from 6 Oct and again with line tables later as the suite grew. None at all keeps each binary to its code; a failing assertion still reports its file and line, which the panic carries without debuginfo, and a backtrace still names its functions. The test profile inherits dev's, and is set too so a [profile.test] added later cannot bring debuginfo back. rust-cache hashes CARGO_* variables into its key, so changing these needs no key bump.
+    env:
+      CARGO_PROFILE_DEV_DEBUG: 0
+      CARGO_PROFILE_TEST_DEBUG: 0
+    strategy:
+      fail-fast: false
+      matrix:
+        # `inputs` is null on push and pull_request, so those take the Linux-only list. Only an
+        # explicit dispatch with a box ticked puts a parked lane back, except on the public repository, which takes every lane.
+        os: >-
+          ${{ fromJSON(
+            ((github.repository == 'pixelitemedia/permaura' || (inputs.macos && inputs.windows)) && '["ubuntu-latest", "windows-latest", "macos-14"]')
+            || (inputs.windows && '["ubuntu-latest", "windows-latest"]')
+            || (inputs.macos && '["ubuntu-latest", "macos-14"]')
+            || '["ubuntu-latest"]'
+          ) }}
+    steps:
+      # Before the cache restore and the build, so both have the room. The image ships .NET, Android, Haskell and CodeQL toolchains this job never uses, tens of GB between them; the paths are the image's own, so a later image that drops one leaves nothing to remove.
+      - name: free runner disk
+        if: runner.os == 'Linux'
+        run: |
+          df -h /
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
+          df -h /
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7 (v7.0.1)
+      # rust-cache keys on the lockfile and toolchain, not on [profile] in Cargo.toml, so a profile change restores artifacts built the old way and, on an exact key hit, never saves the rebuilt ones. Change this key whenever the dependency profile changes.
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: deps-opt2
+      - uses: taiki-e/install-action@83ac0ad63c0167e6f06796fab0fce28db1bf3db0 # v2.87.22
+        with:
+          tool: nextest
+      # nextest runs every test in its own process and reports each one's duration, which is what showed the lane's time was spent in unoptimized dependencies. On its own it did not shorten the lane on the 4-vCPU runner.
+      - name: cargo nextest
+        run: cargo nextest run --workspace
+      # nextest does not run doctests. Empty today, kept so an added one cannot pass unnoticed.
+      - name: doctests
+        run: cargo test --workspace --doc
+      # A workspace build turns the gateway's default features on, which hides a module that only the sqlite feature declares, so the documented SQLite-free and SSH-only builds are checked on the package alone.
+      - name: gateway feature combinations
+        run: |
+          cargo check --locked -p permaura-core
+          cargo test --locked -p permaura-platform --features child
+          cargo check --locked -p permaura-gateway --no-default-features
+          cargo check --locked -p permaura-gateway --no-default-features --features ssh-transport
+      # README.md promises source builders the workspace rust-version; a crate named in a manifest can need more without the resolver objecting.
+      - name: rust floor
+        run: node scripts/check-rust-floor.mjs
+
+      # `.cargo/config.toml` links the MSVC CRT statically because a clean Windows install
+      # has no VC++ redistributable; without it the shipped gateway exits 0xC0000135 before main and
+      # says nothing. Nowhere that anyone builds or tests reproduces that (dev boxes and every
+      # runner image carry the redistributable), so the flag's absence is invisible except in the
+      # import table. This no longer runs on every PR, because the Windows lane it rides on is parked:
+      # it fires only on a dispatch with the Windows box ticked, or on the public repository, where that lane runs by default. The release pipeline asserts the same
+      # property on the shipped binaries before publishing, so the guarantee holds at the release
+      # rather than at the push. Tick the box when touching anything that links or loads on Windows.
+      - name: no dynamic CRT dependency
+        if: matrix.os == 'windows-latest'
+        shell: bash
+        run: |
+          # Built explicitly rather than relying on `cargo test` to have emitted the bin: the test
+          # profile's copy lives under deps/ with a hash in its name, and a guard that silently finds
+          # no file to check is the same as no guard.
+          cargo build -p permaura-gateway
+          node scripts/check-windows-imports.mjs target/debug/permaura.exe
+
+      # This job has run the runner out of disk before, so every run, failed ones included, shows what it left.
+      - name: disk usage
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: df -h . && du -sh target || true
+
+  cli-tests:
+    name: npm launcher unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        # 20 is the engines floor; 22 honors NODE_USE_ENV_PROXY, which the mcp-stdio and sdk proxy-bypass regressions need and skip without.
+        node-version: [20, 22]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7 (v7.0.1)
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7 (v7.0.0)
+        with:
+          node-version: ${{ matrix.node-version }}
+      - name: node --test
+        # Guarded so this workflow can land independently of the branch that adds the test suite.
+        run: |
+          if [ -f packages/gateway/test/lib.test.mjs ]; then
+            npm --prefix packages/gateway test
+          else
+            echo "no CLI test suite on this ref: skipping"
+          fi
+      - name: mcp-stdio and sdk node --test
+        # corepack runs the pnpm that package.json's packageManager names, so nothing new is pinned here.
+        run: |
+          corepack pnpm install --frozen-lockfile --filter @permaura/mcp-stdio... --filter @permaura/sdk...
+          corepack pnpm --filter @permaura/types build
+          corepack pnpm --filter @permaura/mcp-stdio test
+          corepack pnpm --filter @permaura/sdk test
+
+  clippy:
+    # Advisory until the pre-existing warning baseline (46 at introduction) is cleaned up. Then
+    # tighten to `-- -D warnings` so new lint debt fails the build instead of accruing silently.
+    name: clippy (advisory)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7 (v7.0.1)
+      # Same key as the test job, for the same reason.
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: deps-opt2
+      - name: cargo clippy
+        run: cargo clippy --workspace --all-targets
+
+  cargo-audit:
+    # A real gate with a CLEAN baseline: any RustSec vulnerability fails the build, no ignores. The
+    # MSRV bump to 1.88 took the quinn/time fixes, and the russh 0.54 -> 0.62 migration cleared
+    # russh + russh-cryptovec AND dropped `rsa` from the tree entirely (russh no longer pulls it), so
+    # RUSTSEC-2023-0071 went with it. All eight original advisories are resolved. The only thing
+    # cargo-audit still reports is the `unsafe-libyaml` unmaintained *warning* (RUSTSEC-2024-0449, via serde_yaml), which is not a
+    # vulnerability and does not fail the run. If an ignore ever reappears here, something regressed.
+    name: cargo audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7 (v7.0.1)
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - name: install cargo-audit
+        run: cargo install cargo-audit --locked
+      - name: cargo audit
+        run: cargo audit
+
+  secret-scan:
+    name: gitleaks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7 (v7.0.1)
+        with:
+          fetch-depth: 0
+      # gitleaks-action@v2 refuses to run on org-owned repos without a paid licence key; the scanner
+      # itself is MIT, so install the pinned binary and run it directly.
+      - name: install gitleaks
+        env:
+          GITLEAKS_VERSION: 8.30.1
+        run: |
+          base="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}"
+          curl -sSfL -o gitleaks.tar.gz "${base}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -sSfL -o gitleaks-checksums.txt "${base}/gitleaks_${GITLEAKS_VERSION}_checksums.txt"
+          awk -v f="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" '$2 == f {print $1 "  gitleaks.tar.gz"}' \
+            gitleaks-checksums.txt | sha256sum -c -
+          tar -xzf gitleaks.tar.gz gitleaks
+          sudo install -m 0755 gitleaks /usr/local/bin/gitleaks
+          rm -f gitleaks gitleaks.tar.gz gitleaks-checksums.txt
+      - name: gitleaks
+        run: gitleaks git --no-banner --redact --verbose .

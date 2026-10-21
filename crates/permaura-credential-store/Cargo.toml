@@ -1,0 +1,94 @@
+[package]
+name = "permaura-credential-store"
+description = "One secret, kept in the best custody the machine actually offers: OS credential store where there is a usable one, an owner-only file where there is not."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+# WHY THIS IS ITS OWN CRATE. The logic lived in the desktop app (`src-tauri/src/credential_store.rs`),
+# which made the vault key something the app owned and the gateway had to be handed (src/lib.rs tells
+# what that cost).
+# Both programs need the identical decision table (get it wrong in one and a live vault is re-keyed),
+# so it moved here rather than being reimplemented. It is not folded into `permaura-core` because the
+# backends drag in a per-platform dependency tree (Security.framework, windows-sys, D-Bus) that every
+# other consumer of core would then link, and because core is `#![forbid(unsafe_code)]` and
+# dependency-light by design.
+#
+# EVERY BACKEND IS OPT-IN, and the consumer picks. That is not indecision: the two binaries genuinely
+# cannot make the same choice on Linux. The desktop already links libdbus through tao/tauri, so
+# `sync-secret-service` is free there. The gateway ships as a STATIC musl binary, which cannot
+# link libdbus at all, and its only pure-Rust alternative blocks a
+# future inside a Tokio worker. See `HAS_NATIVE_STORE` in lib.rs: the constant and the feature list
+# are tied together there so they cannot drift.
+
+[features]
+default = []
+
+# macOS Keychain. Pulls security-framework for the code-identity probe as well as through keyring:
+# Keychain ACLs key on code identity, so a binary that cannot prove a stable one must not adopt.
+# security-framework and nix also address an app store's items in the login keychain by path, since keyring only reaches the user-domain default keychain, which any program running as the user can repoint.
+apple-native = ["keyring/apple-native", "dep:security-framework", "dep:nix"]
+
+# The data-protection keychain for an app store that names a keychain access group. Only an app whose release build is signed with that group in `keychain-access-groups`, under an embedded provisioning profile, can turn it on: every other build gets a refusal from every read and write. The gateway leaves it off, and kSecUseDataProtectionKeychain needs macOS 10.15, which the desktop's 12.0 floor clears.
+apple-data-protection = ["apple-native", "dep:security-framework-3"]
+
+# Windows Credential Manager. DPAPI-backed and per-user, with no code-identity ACL and no daemon to
+# reach, so it is the one native store that needs neither a signature nor a runtime probe.
+windows-native = ["keyring/windows-native"]
+
+# Linux Secret Service over libdbus (a C library). The desktop's choice, because tao already links it.
+# NOT usable from a static musl build.
+linux-sync-secret-service = ["keyring/sync-secret-service", "keyring/crypto-rust", "dep:zbus"]
+
+# Linux Secret Service over zbus (pure Rust, links on musl). Deliberately unused so far: keyring drives
+# it by blocking on a future, and the gateway resolves its KEK from inside `async fn main`, so turning
+# this on without first moving that resolution off the Tokio worker trades a packaging problem for a
+# runtime one. Left declared so the next person starts from the constraint rather than rediscovering it.
+linux-async-secret-service = [
+    "keyring/async-secret-service",
+    "keyring/crypto-rust",
+    "keyring/async-io",
+    "dep:zbus",
+]
+
+[dependencies]
+permaura-core = { workspace = true }
+# Only to derive the per-home account suffix. Not a security boundary: it separates installs on one
+# machine, so a short digest of the home path is the whole requirement.
+sha2 = { workspace = true }
+base64 = { workspace = true }
+getrandom = "0.2"
+log = "0.4"
+
+# Never optional: `Entry` is the type the decision table is written against. With no backend feature
+# enabled keyring resolves to its in-memory mock, which is exactly the state `HAS_NATIVE_STORE` exists
+# to detect and refuse to trust.
+keyring = { version = "3", default-features = false }
+
+[target.'cfg(windows)'.dependencies]
+# Owner-only DACLs for secret files. Not behind a feature: `restrict_to_owner` is called by every
+# writer of secret material, whether or not this build talks to Credential Manager.
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Security_Authorization",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Threading",
+] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# `os::macos::code_signing`: SecCode/SecRequirement in safe wrappers, so the identity probe needs no
+# `unsafe`. The Windows DACL in `owner_only` is the crate's only exception, and it is the reason the
+# crate says `deny(unsafe_code)` rather than `forbid`.
+security-framework = { version = "2.11", optional = true }
+# The data-protection keychain's options (`use_protected_keychain`, the access group), which 2.11 does not have. keyring already links this version, so it adds no crate.
+security-framework-3 = { package = "security-framework", version = "3.6", features = ["OSX_10_15"], optional = true }
+# The home in the user record, for the login keychain's path: `HOME` is whatever the app's environment says, and any program running as the user can set that.
+nix = { version = "0.31", default-features = false, features = ["user"], optional = true }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# Asking the session bus whether anything provides org.freedesktop.secrets, before keyring is touched.
+zbus = { version = "5", default-features = false, features = ["blocking-api", "async-io"], optional = true }

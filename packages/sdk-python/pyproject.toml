@@ -1,0 +1,48 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "permaura"
+version = "0.1.0"
+description = "Python SDK for Permaura: give agents permission, not keys. A typed REST client plus the define_connector authoring API and redact helper for building secretless agent capabilities."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Permaura" }]
+keywords = ["permaura", "mcp", "agents", "security", "policy", "secrets", "capability-broker"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: Apache Software License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Security",
+  "Typing :: Typed",
+]
+dependencies = ["httpx>=0.24"]
+
+[project.urls]
+Homepage = "https://permaura.com"
+Documentation = "https://permaura.com/docs"
+Source = "https://github.com/pixelitemedia/permaura"
+Issues = "https://github.com/pixelitemedia/permaura/issues"
+
+[project.optional-dependencies]
+dev = ["pytest>=7", "mypy>=1.0"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/permaura"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src/permaura", "README.md"]
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

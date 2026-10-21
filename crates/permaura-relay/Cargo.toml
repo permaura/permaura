@@ -1,0 +1,19 @@
+[package]
+name = "permaura-relay"
+description = "Permaura relay protocol: versioned frames, ed25519-signed control frames, replay guards, and a transport seam for the Mode B worker<->control-plane channel. Pure types + crypto; no async runtime."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+permaura-core = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+async-trait = { workspace = true }
+ed25519-dalek = { workspace = true }
+base64 = { workspace = true }
+sha2 = { workspace = true }

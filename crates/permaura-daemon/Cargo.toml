@@ -1,0 +1,24 @@
+[package]
+name = "permaura-daemon"
+description = "Permaura local broker daemon (permad): reuses the gateway router, bound to localhost with local-first config."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "permad"
+path = "src/main.rs"
+
+[dependencies]
+permaura-gateway = { workspace = true }
+axum = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+anyhow = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }

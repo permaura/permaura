@@ -1,0 +1,84 @@
+# Exceptions for the synthetic credentials that tests feed through the redaction and scrub code on purpose. Each names one file and the exact complete value, or for a key that spans source lines the exact complete match, anchored at both ends, so any other value of the same shape fails the scan, in that file too.
+# Rule-scoped on purpose: gitleaks 8.30.1 ignores condition = "AND" in a global allowlist, which would turn every entry into a path-wide or value-wide exception. Each file is also scanned, with the pinned scanner, holding a different value of each excepted shape, which must fail.
+[extend]
+useDefault = true
+
+[[rules]]
+id = "stripe-access-token"
+# The scrub tests' SECRET constant.
+[[rules.allowlists]]
+condition = "AND"
+paths = ['''(^|/)crates/permaura-core/src/scrub\.rs$''']
+regexes = ['''^sk_test_Zx9fQ2vLm7RtA4pW$''']
+# The agent-view tests' sequential dummy key.
+[[rules.allowlists]]
+condition = "AND"
+paths = ['''(^|/)crates/permaura-core/src/json_stream\.rs$''']
+regexes = ['''^sk_live_0123456789abcdef$''']
+# The masking tests' alphabet and zero-run dummy keys.
+[[rules.allowlists]]
+condition = "AND"
+paths = ['''(^|/)services/gateway/src/approval_display\.rs$''']
+regexes = ['''^sk_live_abcdefghijklmnop$''', '''^sk_live_51Hx0000000000000000$''']
+
+[[rules]]
+id = "curl-auth-header"
+# The masking tests' curl command, carrying the alphabet dummy key above.
+[[rules.allowlists]]
+condition = "AND"
+paths = ['''(^|/)services/gateway/src/approval_display\.rs$''']
+regexes = ['''^sk_live_abcdefghijklmnop$''']
+
+[[rules]]
+id = "slack-webhook-url"
+# The masking tests' webhook, Slack's own documentation placeholder of zeros and Xs.
+[[rules.allowlists]]
+condition = "AND"
+paths = ['''(^|/)services/gateway/src/approval_display\.rs$''']
+regexes = ['''^https://hooks\.slack\.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX$''']
+
+[[rules]]
+id = "generic-api-key"
+# The masking tests: a short dummy OAuth access token, a sequential hex string that must stay shown, RFC 7636's published example code_verifier, and the public WETH contract address as a swap's buyToken.
+[[rules.allowlists]]
+condition = "AND"
+paths = ['''(^|/)services/gateway/src/approval_display\.rs$''']
+regexes = [
+  '''^ya29\.a0AfH6SMBxQ1xyzxyzxyzxyz$''',
+  '''^0123456789abcdef0123456789abcdef01234567$''',
+  '''^dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk$''',
+  '''^0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2$''',
+]
+# The redaction test's two values marked SYNTHETIC in an upstream error body.
+[[rules.allowlists]]
+condition = "AND"
+paths = ['''(^|/)services/gateway/tests/call_diagnostics\.rs$''']
+regexes = ['''^hunter2-SYNTHETIC$''', '''^ak-SYNTHETIC-123$''']
+# The json_stream.rs dummy key above, which this rule matches where it follows `secret =` or `key=` once the Stripe rule no longer reports it.
+[[rules.allowlists]]
+condition = "AND"
+paths = ['''(^|/)crates/permaura-core/src/json_stream\.rs$''']
+regexes = ['''^sk_live_0123456789abcdef$''']
+# The permad throwaway test's announce secret, spelled as a placeholder.
+[[rules.allowlists]]
+condition = "AND"
+paths = ['''(^|/)crates/permaura-daemon/tests/throwaway\.rs$''']
+regexes = ['''^gwa_dos02_synthetic_placeholder$''']
+# The tunnel-state test's TunnelSecret, the base64 of the alphabet.
+[[rules.allowlists]]
+condition = "AND"
+paths = ['''(^|/)services/gateway/src/cli/start\.rs$''']
+regexes = ['''^YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXphYmNkZWY=$''']
+
+[[rules]]
+id = "private-key"
+# The scrub tests' OpenSSH-shaped key: the format's own magic prefix and the base64 of A to P, with literal \n escapes. The whole literal, so the same header and prefix with any other body fails.
+[[rules.allowlists]]
+condition = "AND"
+paths = ['''(^|/)crates/permaura-core/src/scrub\.rs$''']
+regexes = ['''^-----BEGIN OPENSSH PRIVATE K[E]Y-----\\nb3BlbnNzaC1rZXktdjEAAAAA\\nQUJDREVGR0hJSktMTU5PUA==\\n-----END OPENSSH PRIVATE K[E]Y-----$''']
+# The plaintext-lifetime test assembles an Infisical answer whose PEM body is the PEM_LINE probe constant, so the match spans three source lines and holds no key: exactly those lines, indentation included.
+[[rules.allowlists]]
+condition = "AND"
+paths = ['''(^|/)services/gateway/tests/plaintext_lifetime\.rs$''']
+regexes = ['''^-----BEGIN PRIVATE K[E]Y-----\\\\n",\n {16}PEM_LINE,\n {16}"\\\\n-----END PRIVATE K[E]Y-----$''']

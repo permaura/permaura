@@ -1,0 +1,33 @@
+# Which licences we accept in the dependency tree, and therefore which ones
+# THIRD-PARTY-NOTICES.txt is generated from. A crate under anything not listed here fails the
+# generation rather than shipping unattributed, which is the point: the file exists to discharge
+# an obligation, so a gap in it has to be loud.
+accepted = [
+    "Apache-2.0",
+    "MIT",
+    "MIT-0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "MPL-2.0",
+    "Unicode-3.0",
+    "CDLA-Permissive-2.0",
+    "Unlicense",
+    "OpenSSL",
+    "BSL-1.0",
+]
+
+# The gateway ships as a binary for these; anything only reachable from a dev-dependency or another
+# target is not distributed and owes nothing.
+targets = [
+    "x86_64-apple-darwin",
+    "aarch64-apple-darwin",
+    "x86_64-unknown-linux-musl",
+    "aarch64-unknown-linux-musl",
+    "x86_64-pc-windows-msvc",
+    "aarch64-pc-windows-msvc",
+]
+
+ignore-build-dependencies = true
+ignore-dev-dependencies = true
