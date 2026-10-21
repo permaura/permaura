@@ -774,10 +774,14 @@ mod tests {
             let record = seen.clone();
             tokio::spawn(async move {
                 while let Ok((mut sock, _)) = listener.accept().await {
-                    let mut buf = [0u8; 8192];
-                    if let Ok(n) = sock.read(&mut buf).await {
-                        record.lock().unwrap().extend_from_slice(&buf[..n]);
+                    let (mut got, mut buf) = (Vec::new(), [0u8; 8192]);
+                    while !crate::cli::request_complete(&got) {
+                        match sock.read(&mut buf).await {
+                            Ok(0) | Err(_) => break,
+                            Ok(n) => got.extend_from_slice(&buf[..n]),
+                        }
                     }
+                    record.lock().unwrap().extend_from_slice(&got);
                     let _ = sock.write_all(reply.as_bytes()).await;
                     let _ = sock.shutdown().await;
                 }
@@ -1164,7 +1168,11 @@ mod tests {
         };
         assert!(!this_machine_has(ip, &[]), "an address no interface carries is not this machine's, whatever a bind says");
         assert!(this_machine_has(ip, &[ip]));
-        assert!(interface_addresses().contains(&ip), "the interface list names the route's own address");
+        if cfg!(unix) {
+            assert!(interface_addresses().contains(&ip), "the interface list names the route's own address");
+        } else {
+            assert!(interface_addresses().is_empty(), "no interface list is read here");
+        }
     }
 
     /// Whether a request sent to `addr` is answered within the probe's own two seconds.
@@ -1216,6 +1224,10 @@ mod tests {
             eprintln!("no non-loopback address on this machine; skipped");
             return;
         };
+        if !cfg!(unix) {
+            assert_eq!(local_addr_of(&format!("http://{}", SocketAddr::new(ip, 7376))), None, "with no interface list, this machine's own address is taken for another machine's");
+            return;
+        }
         let token = "pgt_proofownaddrtoken";
         let home = scratch_home("proof-ownaddr", token);
         let (addr, seen, _held) = recording_gateway_on(ip, Answer::ProofFor(token.into()));

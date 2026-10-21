@@ -1,6 +1,7 @@
 //! Shared setup for the gateway's integration tests.
 #![allow(dead_code)]
 
+pub mod raw_http;
 pub mod synthetic_oauth;
 
 use permaura_gateway::store::{Session, SessionRole};

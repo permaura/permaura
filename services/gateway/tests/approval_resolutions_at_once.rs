@@ -16,7 +16,7 @@ use permaura_gateway::store::sqlite::SqliteStore;
 use permaura_gateway::store::Store;
 use permaura_gateway::{build_router, seed, AppState};
 use serde_json::{json, Value};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::AsyncWriteExt;
 use tokio::sync::{mpsc, Semaphore};
 use tower::ServiceExt;
 
@@ -32,13 +32,8 @@ async fn upstream(arrived: mpsc::UnboundedSender<()>, release: Arc<Semaphore>) -
         while let Ok((mut sock, _)) = listener.accept().await {
             let (arrived, release) = (arrived.clone(), release.clone());
             tokio::spawn(async move {
-                let mut head = [0u8; 4096];
-                let mut seen = Vec::new();
-                while !seen.windows(4).any(|w| w == b"\r\n\r\n") {
-                    match sock.read(&mut head).await {
-                        Ok(0) | Err(_) => return,
-                        Ok(n) => seen.extend_from_slice(&head[..n]),
-                    }
+                if common::raw_http::read_request(&mut sock).await.is_none() {
+                    return;
                 }
                 let _ = arrived.send(());
                 let _permit = release.acquire().await;

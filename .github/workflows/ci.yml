@@ -37,7 +37,8 @@ jobs:
   test:
     name: test ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
+    # The Windows lane takes well over an hour: the SQLite-backed tests commit once per event, and each commit is a slow flush on that runner's disk (an audit-scale test took 13 minutes there against 15 s on Linux).
+    timeout-minutes: ${{ matrix.os == 'windows-latest' && 150 || 60 }}
     # The test binaries each statically link the gateway, and their debuginfo filled the runner's disk until ld died with SIGBUS (signal 7: its mmap of the output fails on a full disk), with full debuginfo from 6 Oct and again with line tables later as the suite grew. None at all keeps each binary to its code; a failing assertion still reports its file and line, which the panic carries without debuginfo, and a backtrace still names its functions. The test profile inherits dev's, and is set too so a [profile.test] added later cannot bring debuginfo back. rust-cache hashes CARGO_* variables into its key, so changing these needs no key bump.
     env:
       CARGO_PROFILE_DEV_DEBUG: 0
@@ -72,7 +73,7 @@ jobs:
           tool: nextest
       # nextest runs every test in its own process and reports each one's duration, which is what showed the lane's time was spent in unoptimized dependencies. On its own it did not shorten the lane on the 4-vCPU runner.
       - name: cargo nextest
-        run: cargo nextest run --workspace
+        run: cargo nextest run --workspace --no-fail-fast
       # nextest does not run doctests. Empty today, kept so an added one cannot pass unnoticed.
       - name: doctests
         run: cargo test --workspace --doc

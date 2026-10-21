@@ -148,14 +148,15 @@ async fn a_response_holds_its_slot_until_it_has_been_read() {
 #[tokio::test]
 async fn a_reader_that_stalls_gives_its_slot_back_at_the_delivery_deadline() {
     let floor = Duration::from_millis(300);
-    // About 1.25 MB: enough to stall over loopback, small enough that its deadline at the minimum rate is under 10 s.
-    let (addr, limits) = serve(Some(floor), 11_000).await;
+    // About 1.25 MB: enough to stall over loopback, small enough that its deadline at the minimum rate is under 10 s. Windows takes a body that size into the loopback connection whole, leaving hyper nothing to hold, so there it is the first test's 17 MB, whose deadline is the 120 s cap.
+    let (rows, longest) = if cfg!(windows) { (150_000, Duration::from_secs(120)) } else { (11_000, Duration::from_secs(10)) };
+    let (addr, limits) = serve(Some(floor), rows).await;
 
     let started = Instant::now();
     let mut stalled = invoke(addr).await;
     assert_eq!(stalled.status, 200, "{}", stalled.head);
     let deadline = delivery_deadline(floor, Some(stalled.content_length as u64));
-    assert!(deadline < Duration::from_secs(10), "{deadline:?}");
+    assert!(deadline <= longest, "{deadline:?}");
     assert_eq!(limits.available_execution_slots(), 0, "held while the body is unread");
     assert!(until_free(&limits, deadline + Duration::from_secs(10)).await, "the deadline gives the slot back with the client doing nothing");
     assert!(started.elapsed() >= deadline, "and not before the deadline its length set: {:?} of {deadline:?}", started.elapsed());

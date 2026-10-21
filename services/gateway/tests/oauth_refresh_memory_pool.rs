@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use permaura_gateway::connectors::{MemoryPool, ReqwestClient};
 use permaura_gateway::oauth_credential::{ensure_fresh, OAuthCredential, OAuthLayer};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::AsyncWriteExt;
 
 mod common;
 
@@ -23,13 +23,8 @@ async fn token_endpoint(hits: Arc<AtomicUsize>) -> String {
         while let Ok((mut sock, _)) = listener.accept().await {
             let hits = hits.clone();
             tokio::spawn(async move {
-                let mut seen = Vec::new();
-                let mut buf = [0u8; 4096];
-                while !seen.windows(4).any(|w| w == b"\r\n\r\n") {
-                    match sock.read(&mut buf).await {
-                        Ok(0) | Err(_) => return,
-                        Ok(n) => seen.extend_from_slice(&buf[..n]),
-                    }
+                if common::raw_http::read_request(&mut sock).await.is_none() {
+                    return;
                 }
                 let n = hits.fetch_add(1, Ordering::SeqCst);
                 let body = format!(r#"{{"access_token":"synthetic-access-{n}","refresh_token":"synthetic-rotated-{n}","expires_in":3600,"token_type":"bearer"}}"#);

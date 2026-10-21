@@ -3533,9 +3533,14 @@ mod tests {
         std::thread::spawn(move || {
             for stream in listener.incoming() {
                 let Ok(mut stream) = stream else { continue };
-                let mut buf = [0u8; 8192];
-                let n = stream.read(&mut buf).unwrap_or(0);
-                let request = String::from_utf8_lossy(&buf[..n]).to_string();
+                let (mut got, mut buf) = (Vec::new(), [0u8; 8192]);
+                while !crate::cli::request_complete(&got) {
+                    match stream.read(&mut buf) {
+                        Ok(0) | Err(_) => break,
+                        Ok(n) => got.extend_from_slice(&buf[..n]),
+                    }
+                }
+                let request = String::from_utf8_lossy(&got).to_string();
                 log.lock().unwrap().push(request.clone());
                 let challenge = request
                     .lines()

@@ -66,6 +66,15 @@ fn with_home_var<T>(var: &str, home: &std::path::Path, f: impl FnOnce() -> T) ->
     out
 }
 
+/// Whether `raw` holds a whole request, its head and as much body as its `Content-Length` announces. A test peer reads this far before answering because closing with a request body unread resets the connection on Windows, failing the sender with os error 10053.
+#[cfg(test)]
+pub(crate) fn request_complete(raw: &[u8]) -> bool {
+    let Some(end) = raw.windows(4).position(|w| w == b"\r\n\r\n") else { return false };
+    let head = String::from_utf8_lossy(&raw[..end]).to_ascii_lowercase();
+    let length = head.lines().find_map(|l| l.strip_prefix("content-length:")).and_then(|v| v.trim().parse::<usize>().ok()).unwrap_or(0);
+    raw.len() >= end + 4 + length
+}
+
 use clap::{CommandFactory, Parser, Subcommand};
 
 /// `permaura`: give agents permission, not keys.

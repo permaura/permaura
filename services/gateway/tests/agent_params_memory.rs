@@ -16,7 +16,7 @@ use permaura_gateway::store::memory::MemoryStore;
 use permaura_gateway::store::Store;
 use permaura_gateway::{build_router, seed, AppState};
 use serde_json::Value;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::AsyncWriteExt;
 use tokio::sync::Semaphore;
 use tower::ServiceExt;
 
@@ -50,13 +50,8 @@ async fn upstream(gate: Arc<Semaphore>, delay: Duration) -> String {
         while let Ok((mut sock, _)) = listener.accept().await {
             let gate = gate.clone();
             tokio::spawn(async move {
-                let mut buf = [0u8; 4096];
-                let mut seen = Vec::new();
-                while !seen.windows(4).any(|w| w == b"\r\n\r\n") {
-                    match sock.read(&mut buf).await {
-                        Ok(0) | Err(_) => return,
-                        Ok(n) => seen.extend_from_slice(&buf[..n]),
-                    }
+                if common::raw_http::read_request(&mut sock).await.is_none() {
+                    return;
                 }
                 let _permit = gate.acquire().await;
                 tokio::time::sleep(delay).await;

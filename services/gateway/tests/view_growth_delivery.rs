@@ -18,7 +18,8 @@ use tokio::net::TcpStream;
 
 mod common;
 
-const RESPONSE_CAP: u64 = 320 * 1024;
+/// Windows takes an unread view of about a megabyte into the loopback connection whole, leaving hyper nothing to hold, so there the cap stays at its 5 MiB default: a view of about 20 MB, whose stalled reader waits out the 120 s deadline cap.
+const RESPONSE_CAP: u64 = if cfg!(windows) { 5 * 1024 * 1024 } else { 320 * 1024 };
 const CAPABILITY: &str = "braintree.transactions.search";
 const SECRET: &str = "sec_braintree_prod";
 
@@ -190,7 +191,8 @@ async fn released_at_the_deadline(route: Route) {
     let started = Instant::now();
     let mut answer = unread(&served, route).await;
     let deadline = delivery_deadline(floor, Some(answer.content_length as u64));
-    assert!(deadline < Duration::from_secs(25), "{deadline:?}");
+    let longest = if cfg!(windows) { Duration::from_secs(120) } else { Duration::from_secs(25) };
+    assert!(deadline <= longest, "{deadline:?}");
     assert!(served.until_growth_free(deadline + Duration::from_secs(10)).await, "{route:?}: the deadline gives the growth room back with the client doing nothing");
     assert!(started.elapsed() >= deadline, "and not before the deadline its length set: {:?} of {deadline:?}", started.elapsed());
     read_rest(&mut answer).await;

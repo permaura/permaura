@@ -214,10 +214,14 @@ mod tests {
         let record = seen.clone();
         tokio::spawn(async move {
             while let Ok((mut sock, _)) = listener.accept().await {
-                let mut buf = [0u8; 8192];
-                if let Ok(n) = sock.read(&mut buf).await {
-                    record.lock().unwrap().extend_from_slice(&buf[..n]);
+                let (mut got, mut buf) = (Vec::new(), [0u8; 8192]);
+                while !crate::cli::request_complete(&got) {
+                    match sock.read(&mut buf).await {
+                        Ok(0) | Err(_) => break,
+                        Ok(n) => got.extend_from_slice(&buf[..n]),
+                    }
                 }
+                record.lock().unwrap().extend_from_slice(&got);
                 let _ = sock.write_all(reply.as_bytes()).await;
                 let _ = sock.shutdown().await;
             }
