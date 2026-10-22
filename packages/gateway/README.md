@@ -61,4 +61,4 @@ The release manifest and the key it is verified against are pinned. `PERMAURA_MA
 
 macOS, Linux and Windows, on arm64 and x64.
 
-> The gateway is a single self-contained binary. Source: https://github.com/pixelitemedia/permaura. Releases: https://github.com/pixelitemedia/permaura-dist
+> The gateway is a single self-contained binary. Source: https://github.com/permaura/permaura. Releases: https://github.com/permaura/permaura-dist

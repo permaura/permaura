@@ -5,7 +5,7 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/pixelitemedia/permaura.git",
+    "url": "git+https://github.com/permaura/permaura.git",
     "directory": "packages/mcp-stdio"
   },
   "homepage": "https://permaura.com",

@@ -28,7 +28,7 @@ use crate::Posture;
 /// The single source of truth for "what's the latest gateway": the same static JSON the npm CLI and
 /// the desktop updater read. A debug build takes `PERMAURA_MANIFEST_URL` in its place; see [`dev_override`].
 const MANIFEST_URL: &str =
-    "https://raw.githubusercontent.com/pixelitemedia/permaura-dist/main/manifests/gateway.json";
+    "https://raw.githubusercontent.com/permaura/permaura-dist/main/manifests/gateway.json";
 
 /// The manifest this process reads.
 pub fn manifest_url() -> String {

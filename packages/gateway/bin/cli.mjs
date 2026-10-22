@@ -41,7 +41,7 @@ import {
 // The single source of truth for "what's the latest gateway": a static JSON in the public dist repo.
 // PERMAURA_MANIFEST_URL replaces it from a source checkout only; see releaseTrustRoot.
 const DEFAULT_MANIFEST_URL =
-  "https://raw.githubusercontent.com/pixelitemedia/permaura-dist/main/manifests/gateway.json";
+  "https://raw.githubusercontent.com/permaura/permaura-dist/main/manifests/gateway.json";
 const ADDR = process.env.PERMAURA_ADDR || DEFAULT_ADDR;
 // The same `~/.permaura` the gateway itself resolves (PERMAURA_HOME override kept).
 const DIR = process.env.PERMAURA_HOME || path.join(os.homedir(), ".permaura");

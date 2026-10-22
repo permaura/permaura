@@ -27,8 +27,8 @@ dependencies = ["httpx>=0.24"]
 [project.urls]
 Homepage = "https://permaura.com"
 Documentation = "https://permaura.com/docs"
-Source = "https://github.com/pixelitemedia/permaura"
-Issues = "https://github.com/pixelitemedia/permaura/issues"
+Source = "https://github.com/permaura/permaura"
+Issues = "https://github.com/permaura/permaura/issues"
 
 [project.optional-dependencies]
 dev = ["pytest>=7", "mypy>=1.0"]

@@ -2,7 +2,7 @@
 # checks, the npm launcher, MCP stdio bridge and SDK tests, clippy (advisory), cargo audit and gitleaks.
 #
 # The test job runs on Linux by default, adds the Windows and macOS lanes when a manual dispatch
-# selects them, and runs all three on every event in pixelitemedia/permaura.
+# selects them, and runs all three on every event in permaura/permaura.
 name: ci
 
 on:
@@ -50,7 +50,7 @@ jobs:
         # explicit dispatch with a box ticked puts a parked lane back, except on the public repository, which takes every lane.
         os: >-
           ${{ fromJSON(
-            ((github.repository == 'pixelitemedia/permaura' || (inputs.macos && inputs.windows)) && '["ubuntu-latest", "windows-latest", "macos-14"]')
+            ((github.repository == 'permaura/permaura' || (inputs.macos && inputs.windows)) && '["ubuntu-latest", "windows-latest", "macos-14"]')
             || (inputs.windows && '["ubuntu-latest", "windows-latest"]')
             || (inputs.macos && '["ubuntu-latest", "macos-14"]')
             || '["ubuntu-latest"]'
