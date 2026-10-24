@@ -468,14 +468,30 @@ mod tests {
     #[test]
     fn bundled_presets_parse_and_cover_the_catalog() {
         let cat = catalog();
-        assert_eq!(cat.list().len(), 28, "the bundled catalog");
+        assert_eq!(cat.list().len(), 29, "the bundled catalog");
         for id in [
             "stripe", "github", "slack", "gmail", "microsoft-graph", "vercel", "cloudflare",
             "linear", "hubspot", "openai", "braintree", "discord", "docusign", "dropbox",
             "elevenlabs", "fal", "google-analytics", "google-calendar", "google-drive", "google-meet",
-            "google-veo", "heygen", "mailchimp", "openrouter", "paddle", "square", "xero", "events-manager",
+            "google-veo", "heygen", "higgsfield", "mailchimp", "openrouter", "paddle", "square", "xero", "events-manager",
         ] {
             assert!(cat.get(id).is_some(), "missing preset {id}");
+        }
+    }
+
+    #[test]
+    fn higgsfield_sends_its_key_pair_and_gates_every_paid_submit() {
+        use crate::connectors::build_request;
+        let hf = catalog().get("higgsfield").unwrap().instantiate("h", "sec_h");
+        let cap = |s: &str| hf.capabilities.iter().find(|c| c.id == format!("h.{s}")).unwrap();
+        let off = |s: &str| hf.disabled_capabilities.contains(&format!("h.{s}"));
+        let req = build_request(cap("requests.status"), &serde_json::json!({ "request_id": "r1" }), b"kid:ksecret").unwrap();
+        assert_eq!(req.headers.get("Authorization").unwrap(), "Key kid:ksecret");
+        for read in ["requests.status", "estimate", "estimate_variant", "soul_styles.list", "characters.read"] {
+            assert!(!off(read) && !cap(read).requires_approval, "{read} is a read");
+        }
+        for paid in ["generate", "generate_variant", "image.generate", "video.generate", "characters.create"] {
+            assert!(off(paid) && cap(paid).requires_approval, "{paid} spends balance");
         }
     }
 

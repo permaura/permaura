@@ -502,6 +502,29 @@
     - { id: speech.create, method: POST, path: "/v3/voices/speech", body_params: [text, voice_id, input_type, speed, language], requires_approval: true, description: Synthesise speech with a Starfish voice (spends credits) }
     - { id: videos.delete, method: DELETE, path: "/v3/videos/{video_id}", path_params: [video_id], description: Permanently delete a video }
 
+- id: higgsfield
+  name: Higgsfield
+  vertical: data
+  logo: higgsfield
+  description: "Submit image and video jobs to Higgsfield models (Soul, Cinema Studio, Seedance, Kling, Wan), estimate their cost, then poll status and fetch results."
+  base_url: "https://api.higgsfield.ai"
+  brand_color: "#D1FE17"
+  auth: { scheme: raw, header: Authorization, prefix: "Key " }
+  capabilities:
+    - { id: requests.status, method: GET, path: "/requests/{request_id}/status", path_params: [request_id], description: "Poll a request's status; a completed one carries its image, video or audio URLs" }
+    - { id: estimate, method: POST, path: "/estimate/{owner}/{model}/{workflow}", path_params: [owner, model, workflow], body_params: [prompt, image_url, end_image_url, image_urls, video_url, audio_url, duration, resolution, aspect_ratio, num_images, batch_size, generate_audio], action: read, risk: medium, description: "Estimate the USD cost of a three-part model id such as bytedance/seedance-2.5/text-to-video, without submitting it" }
+    - { id: estimate_variant, method: POST, path: "/estimate/{owner}/{model}/{version}/{workflow}", path_params: [owner, model, version, workflow], body_params: [prompt, image_url, end_image_url, image_urls, video_url, audio_url, duration, resolution, aspect_ratio, num_images, batch_size, generate_audio], action: read, risk: medium, description: "Estimate the USD cost of a four-part model id such as kling-video/v3.0/pro/image-to-video, without submitting it" }
+    - { id: soul_styles.list, method: GET, path: "/v1/text2image/soul-styles/v2", description: "List Soul style presets and their style_id values" }
+    - { id: characters.read, method: GET, path: "/v1/custom-references/{id}", path_params: [id], description: "Read a Soul ID character and its training status" }
+    - { id: generate, method: POST, path: "/{owner}/{model}/{workflow}", path_params: [owner, model, workflow], body_params: [prompt, negative_prompt, image_url, end_image_url, image_urls, video_url, video_urls, audio_url, audio_urls, duration, resolution, aspect_ratio, num_images, batch_size, seed, generate_audio, style_id, custom_reference_id], requires_approval: true, description: "Submit a job to a three-part model id such as bytedance/seedance-2.5/text-to-video (spends balance)" }
+    - { id: generate_variant, method: POST, path: "/{owner}/{model}/{version}/{workflow}", path_params: [owner, model, version, workflow], body_params: [prompt, negative_prompt, image_url, end_image_url, image_urls, video_url, video_urls, audio_url, audio_urls, duration, resolution, aspect_ratio, num_images, batch_size, seed, generate_audio, style_id, custom_reference_id], requires_approval: true, description: "Submit a job to a four-part model id such as higgsfield-ai/soul/v2/standard (spends balance)" }
+    - { id: image.generate, method: POST, path: "/higgsfield-ai/soul/v2/standard", body_params: [prompt, aspect_ratio, resolution, enhance_prompt, style_id, style_strength, custom_reference_id, custom_reference_strength, seed, batch_size], requires_approval: true, description: "Generate an image with Soul V2, pinned to that model (spends balance)" }
+    - { id: video.generate, method: POST, path: "/higgsfield/cinema-studio/4.0", body_params: [prompt, duration, resolution, aspect_ratio, image_urls, video_urls, audio_urls, generate_audio, camera_movement, camera_model, camera_lens, camera_aperture, genre, era, light, pacing, color_palette], requires_approval: true, description: "Generate a video shot with Cinema Studio 4.0, pinned to that model (spends balance)" }
+    - { id: characters.create, method: POST, path: "/v1/custom-references", body_params: [name, input_images], requires_approval: true, description: "Train a Soul ID character from 1 to 100 reference images (spends balance)" }
+    - { id: uploads.create, method: POST, path: "/files/generate-upload-url", body_params: [content_type], description: "Mint a one-hour presigned URL to upload an input file, and the public URL to pass to a model" }
+    - { id: requests.cancel, method: POST, path: "/requests/{request_id}/cancel", path_params: [request_id], description: "Cancel a request that is still queued; its reserved balance is refunded" }
+    - { id: requests.delete, method: DELETE, path: "/requests/{request_id}", path_params: [request_id], description: "Delete a finished request's files, prompt and parameters now (billing records are kept)" }
+
 - id: mailchimp
   name: Mailchimp
   vertical: comms
