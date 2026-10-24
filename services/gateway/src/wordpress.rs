@@ -940,11 +940,84 @@ fn annotation(ability: &Value, key: &str) -> bool {
     ability.pointer(&format!("/meta/annotations/{key}")).and_then(Value::as_bool).unwrap_or(false)
 }
 
+/// The method WordPress runs an ability with, from its annotations.
+fn ability_method(readonly: bool, destructive: bool, idempotent: bool) -> HttpMethod {
+    if readonly {
+        HttpMethod::Get
+    } else if destructive && idempotent {
+        HttpMethod::Delete
+    } else {
+        HttpMethod::Post
+    }
+}
+
+/// One ability Permaura has reviewed: the annotations its plugin registers it with and the posture it
+/// lands with when a site registers it exactly so. Compiled in from `presets/abilities.yaml`, so it is
+/// vouched the way the bundled catalog is.
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct KnownAbility {
+    /// The ability's registered name, e.g. `events-manager/list-events`.
+    pub name: String,
+    /// The `readonly` annotation it is registered with.
+    pub readonly: bool,
+    /// The `destructive` annotation it is registered with.
+    pub destructive: bool,
+    /// The `idempotent` annotation it is registered with.
+    pub idempotent: bool,
+    /// The reviewed action.
+    pub action: Action,
+    /// The reviewed risk.
+    pub risk: RiskTier,
+    /// Whether every call asks for approval.
+    pub requires_approval: bool,
+    /// The top-level input fields it was reviewed with.
+    pub input: Vec<String>,
+}
+
+impl KnownAbility {
+    /// The method WordPress runs it with when registered as reviewed.
+    pub fn method(&self) -> HttpMethod {
+        ability_method(self.readonly, self.destructive, self.idempotent)
+    }
+
+    fn posture(&self) -> (Action, RiskTier, bool) {
+        (self.action, self.risk, self.requires_approval)
+    }
+
+    /// Whether `ability`, as a site lists it, is still the ability that was reviewed: the same annotations, and an input schema that takes no top-level field the review did not see.
+    fn reviewed_as(&self, ability: &Value) -> bool {
+        let annotations = (annotation(ability, "readonly"), annotation(ability, "destructive"), annotation(ability, "idempotent"));
+        if annotations != (self.readonly, self.destructive, self.idempotent) {
+            return false;
+        }
+        let Some(schema) = ability.get("input_schema").and_then(Value::as_object) else { return false };
+        // PHP encodes an empty `properties` array as `[]`.
+        match schema.get("properties") {
+            None | Some(Value::Null) => true,
+            Some(Value::Array(none)) => none.is_empty(),
+            Some(Value::Object(fields)) => fields.keys().all(|field| self.input.iter().any(|known| known == field)),
+            Some(_) => false,
+        }
+    }
+}
+
+/// Every reviewed ability, loaded on first use.
+pub fn known_abilities() -> &'static [KnownAbility] {
+    static KNOWN: std::sync::OnceLock<Vec<KnownAbility>> = std::sync::OnceLock::new();
+    KNOWN.get_or_init(|| serde_yaml::from_str(include_str!("../presets/abilities.yaml")).expect("bundled presets/abilities.yaml is valid"))
+}
+
+/// The reviewed entry for `name`, if any.
+pub fn known_ability(name: &str) -> Option<&'static KnownAbility> {
+    known_abilities().iter().find(|k| k.name == name)
+}
+
 /// Derive one capability per ability. The run path is literal (the name contains a slash, so it cannot
 /// be a path parameter); the method is what the annotations make WordPress demand, and the annotations
 /// may raise risk but never lower it, because the site being governed writes them: an ability annotated
 /// `readonly` is sent as a `GET` and keeps the action and risk of an unannotated one (Execute, High),
-/// while `destructive` or a risky word in its name makes it Critical plus approval.
+/// while `destructive` or a risky word in its name makes it Critical plus approval. A [`known_ability`]
+/// registered as it was reviewed ([`KnownAbility::reviewed_as`]) lands with the reviewed posture instead.
 pub fn derive_abilities(abilities: &[Value], connection_id: &str, secret_id: &str, pin: &RestPin) -> Derived {
     let mut out = Derived::default();
     let mut used = BTreeSet::new();
@@ -966,16 +1039,13 @@ pub fn derive_abilities(abilities: &[Value], connection_id: &str, secret_id: &st
         let readonly = annotation(ability, "readonly");
         let destructive = annotation(ability, "destructive");
         let idempotent = annotation(ability, "idempotent");
-        let method = if readonly {
-            HttpMethod::Get
-        } else if destructive && idempotent {
-            HttpMethod::Delete
-        } else {
-            HttpMethod::Post
-        };
+        let method = ability_method(readonly, destructive, idempotent);
         let path = format!("{ABILITIES_ROUTE}/{name}/run");
         let action_id = claim(&mut used, format!("abilities.{}", sanitize(name)));
-        let (action, risk, requires_approval) = ability_posture(name, &path, &action_id, method, destructive);
+        let (action, risk, requires_approval) = match known_ability(name).filter(|k| k.reviewed_as(ability)) {
+            Some(known) => known.posture(),
+            None => ability_posture(name, &path, &action_id, method, destructive),
+        };
         let (query_params, body_params, query_style) = match method {
             HttpMethod::Post => (Vec::new(), vec!["input".to_string()], QueryStyle::Flat),
             _ => (vec!["input".to_string()], Vec::new(), QueryStyle::Brackets),
@@ -1042,6 +1112,10 @@ pub fn stored_floor(connection_id: &str, cap: &Capability, namespaces: &[String]
     let action_id = cap.id.strip_prefix(&format!("{connection_id}.")).unwrap_or(&cap.id);
     if is_ability_capability(connection_id, &cap.id) {
         let name = http.path.strip_prefix(&format!("{ABILITIES_ROUTE}/"))?.strip_suffix("/run")?;
+        // The annotations are not stored, so a reviewed ability is matched on the method they gave it; a floor only ever raises, so a row derived from other annotations sent the same way keeps anything it holds above this.
+        if let Some(known) = known_ability(name).filter(|k| k.method() == http.method) {
+            return Some(known.posture());
+        }
         return Some(ability_posture(name, &http.path, action_id, http.method, false));
     }
     if http.method != HttpMethod::Get {
@@ -1721,5 +1795,116 @@ mod tests {
         )];
         assert_eq!(api_link(&headers).as_deref(), Some("https://example.com/wp-json/"));
         assert_eq!(api_link(&[("link".into(), "<https://x/>; rel=next".into())]), None);
+    }
+
+    /// An ability as a site lists it, taking the input fields it was reviewed with when it has an entry.
+    fn em(name: &str, readonly: bool, destructive: bool, idempotent: bool) -> Value {
+        let fields: serde_json::Map<String, Value> =
+            known_ability(name).map(|k| k.input.iter().map(|f| (f.clone(), json!({ "type": "string" }))).collect()).unwrap_or_default();
+        json!({
+            "name": name, "label": "L",
+            "input_schema": { "type": "object", "properties": fields },
+            "meta": { "annotations": { "readonly": readonly, "destructive": destructive, "idempotent": idempotent }, "show_in_rest": true }
+        })
+    }
+
+    fn posture_of(ability: Value) -> (Action, RiskTier, bool) {
+        let d = derive_abilities(&[ability], "wp_forum", "sec", &pretty());
+        let c = &d.capabilities[0];
+        (c.action, c.risk, c.requires_approval)
+    }
+
+    /// A reviewed ability that takes an input field the review did not see, or lists no input schema, has changed since it was reviewed, so it asks for approval again until it is.
+    #[test]
+    fn a_reviewed_ability_with_a_new_input_field_or_no_schema_gets_the_floor() {
+        let reviewed = (Action::List, RiskTier::Medium, false);
+        assert_eq!(posture_of(em("events-manager/list-events", true, false, true)), reviewed);
+
+        let mut widened = em("events-manager/list-events", true, false, true);
+        widened["input_schema"]["properties"]["delete_after"] = json!({ "type": "boolean" });
+        let floor = posture_of(widened);
+        assert_ne!(floor, reviewed);
+        assert!(floor.1 >= RiskTier::High);
+
+        let mut unschemed = em("events-manager/list-events", true, false, true);
+        unschemed.as_object_mut().unwrap().remove("input_schema");
+        assert_eq!(posture_of(unschemed), floor);
+
+        let mut narrowed = em("events-manager/list-events", true, false, true);
+        narrowed["input_schema"]["properties"].as_object_mut().unwrap().remove("search");
+        assert_eq!(posture_of(narrowed), reviewed, "taking fewer fields is not a change to review");
+
+        // PHP encodes an empty properties array as [].
+        let mut empty = em("events-manager-pro/list-booking-forms", true, false, true);
+        empty["input_schema"]["properties"] = json!([]);
+        assert_eq!(posture_of(empty), reviewed);
+    }
+
+    #[test]
+    fn every_reviewed_ability_parses_once_with_a_pinnable_name_and_a_reviewed_verb() {
+        let known = known_abilities();
+        assert!(known.len() > 50);
+        let mut names = BTreeSet::new();
+        for k in known {
+            assert!(names.insert(k.name.as_str()), "{} listed twice", k.name);
+            assert!(valid_ability_name(&k.name), "{}", k.name);
+            assert_eq!(k.readonly, is_read(k.action), "{}: a read is registered readonly and nothing else is", k.name);
+            assert!(!k.readonly || (k.risk == RiskTier::Medium && !k.requires_approval), "{}", k.name);
+            assert!(k.action != Action::Delete || (k.risk == RiskTier::Critical && k.requires_approval), "{}", k.name);
+            assert!(k.readonly || k.risk >= RiskTier::High, "{}: every write starts switched off", k.name);
+        }
+    }
+
+    fn is_read(action: Action) -> bool {
+        matches!(action, Action::Read | Action::List | Action::Search)
+    }
+
+    /// Events Manager registers its abilities with these annotations; each lands with the posture its REST route gets, and bookings ask first.
+    #[test]
+    fn a_reviewed_ability_registered_as_reviewed_lands_with_its_reviewed_posture() {
+        let abilities = [
+            em("events-manager/list-events", true, false, true),
+            em("events-manager/update-event", false, true, false),
+            em("events-manager/delete-booking", false, true, false),
+            em("events-manager/set-booking-status", false, true, true),
+        ];
+        let d = derive_abilities(&abilities, "wp_forum", "sec", &pretty());
+        let list = cap(&d, "abilities.events_manager_list_events");
+        assert_eq!((list.action, list.risk, list.requires_approval), (Action::List, RiskTier::Medium, false));
+        assert_eq!(list.http.as_ref().unwrap().method, HttpMethod::Get);
+        assert!(!d.disabled.contains(&list.id), "a reviewed read is on when connected");
+        let update = cap(&d, "abilities.events_manager_update_event");
+        assert_eq!((update.action, update.risk, update.requires_approval), (Action::Update, RiskTier::High, false));
+        assert!(d.disabled.contains(&update.id));
+        let delete = cap(&d, "abilities.events_manager_delete_booking");
+        assert_eq!((delete.action, delete.risk, delete.requires_approval), (Action::Delete, RiskTier::Critical, true));
+        let status = cap(&d, "abilities.events_manager_set_booking_status");
+        assert_eq!(status.http.as_ref().unwrap().method, HttpMethod::Delete);
+        assert_eq!((status.action, status.risk, status.requires_approval), (Action::Update, RiskTier::High, true));
+    }
+
+    /// The site writes the annotations, so a reviewed name registered any other way is held to the floor every unreviewed ability gets.
+    #[test]
+    fn a_reviewed_name_registered_with_other_annotations_gets_the_floor() {
+        let as_write = derive_abilities(&[em("events-manager/list-events", false, false, true)], "wp_forum", "sec", &pretty());
+        let unreviewed = derive_abilities(&[em("acme/list-events", false, false, true)], "wp_forum", "sec", &pretty());
+        let (a, b) = (cap(&as_write, "abilities.events_manager_list_events"), cap(&unreviewed, "abilities.acme_list_events"));
+        assert_eq!((a.action, a.risk, a.requires_approval), (b.action, b.risk, b.requires_approval));
+        assert!(a.risk >= RiskTier::High);
+
+        let not_destructive = derive_abilities(&[em("events-manager/delete-event", false, false, false)], "wp_forum", "sec", &pretty());
+        let delete = cap(&not_destructive, "abilities.events_manager_delete_event");
+        assert_eq!((delete.risk, delete.requires_approval), (RiskTier::Critical, true), "the name's own operation word still holds");
+    }
+
+    /// The start-up pass reads the same reviewed posture back from a stored row, so it never raises what derive gave.
+    #[test]
+    fn the_stored_floor_of_a_reviewed_ability_is_its_reviewed_posture() {
+        for k in known_abilities() {
+            let d = derive_abilities(&[em(&k.name, k.readonly, k.destructive, k.idempotent)], "wp_forum", "sec", &pretty());
+            let stored = &d.capabilities[0];
+            assert_eq!(stored_floor("wp_forum", stored, &[]), Some((stored.action, stored.risk, stored.requires_approval)), "{}", k.name);
+            assert_eq!(stored.http.as_ref().unwrap().method, k.method(), "{}", k.name);
+        }
     }
 }

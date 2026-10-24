@@ -466,12 +466,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn bundled_presets_parse_and_cover_the_ten() {
+    fn bundled_presets_parse_and_cover_the_catalog() {
         let cat = catalog();
-        assert_eq!(cat.list().len(), 10, "ship-first catalog is the tier-1 ten");
+        assert_eq!(cat.list().len(), 28, "the bundled catalog");
         for id in [
             "stripe", "github", "slack", "gmail", "microsoft-graph", "vercel", "cloudflare",
-            "linear", "hubspot", "openai",
+            "linear", "hubspot", "openai", "braintree", "discord", "docusign", "dropbox",
+            "elevenlabs", "fal", "google-analytics", "google-calendar", "google-drive", "google-meet",
+            "google-veo", "heygen", "mailchimp", "openrouter", "paddle", "square", "xero", "events-manager",
         ] {
             assert!(cat.get(id).is_some(), "missing preset {id}");
         }
@@ -618,7 +620,6 @@ mod tests {
         let req = crate::connectors::build_request(&inst.capabilities[0], &serde_json::json!({ "per_page": 3 }), b"u:p").unwrap();
         assert_eq!(req.url, "https://example.com/?rest_route=/bbpress/v1/topics&per_page=3");
         assert_eq!(preset.wordpress.as_ref().unwrap().namespace, "bbpress/v1");
-        assert!(catalog().list().iter().all(|p| p.wordpress.is_none()));
     }
 
     #[test]

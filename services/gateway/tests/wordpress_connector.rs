@@ -704,6 +704,31 @@ async fn a_wordpress_preset_needs_a_site_that_serves_its_namespace() {
     assert_eq!(rig.connection("explicit").source.unwrap().namespaces, ["events-manager/v1"]);
 }
 
+/// The bundled Events Manager preset binds to the operator's own site: reads are on, writes start off, and anything that touches a booking or deletes asks first.
+#[tokio::test]
+async fn the_bundled_events_manager_preset_binds_to_your_site_with_bookings_gated() {
+    let rig = rig();
+    let base = "https://events.example.com/wp-json/events-manager/v1";
+    let (status, body) =
+        rig.post("/v1/connections/from-preset", json!({ "preset_id": "events-manager", "name": "Events", "id": "em", "base_url": base })).await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    assert_eq!(rig.connection("em").source.unwrap().namespaces, ["events-manager/v1"]);
+    let disabled = rig.connection("em").disabled_capabilities;
+    let off = |id: &str| disabled.contains(&format!("em.{id}"));
+    for id in ["events.list", "events.availability", "bookings.list", "locations.towns"] {
+        assert!(!off(id), "{id} is a read");
+    }
+    for id in ["events.create", "tickets.update", "bookings.create", "bookings.status", "bookings.delete", "media.upload"] {
+        assert!(off(id), "{id} is a write");
+    }
+    for id in ["bookings.create", "bookings.update", "bookings.status", "bookings.delete", "events.delete"] {
+        assert!(rig.capability(&format!("em.{id}")).unwrap().requires_approval, "{id}");
+    }
+    let read = rig.capability("em.events.read").unwrap();
+    let req = permaura_gateway::connectors::build_request(&read, &json!({ "id": "123:4" }), b"u:p").unwrap();
+    assert_eq!(req.url, format!("{base}/events/123%3A4"), "a timeslot id stays in its one segment");
+}
+
 #[tokio::test]
 async fn a_templated_base_url_is_never_pinned_and_presets_say_when_a_host_is_required() {
     let rig = rig();

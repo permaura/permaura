@@ -12,7 +12,7 @@ members = [
 ]
 
 [workspace.package]
-version = "1.4.2"
+version = "1.4.3"
 edition = "2021"
 # Workspace MSRV: a floor, and a resolver control. The v3 MSRV-aware resolver keeps dependency selection from silently jumping to crates that need a newer toolchain than this, so a bare `cargo update` can't drag in 69 crates of edition-2024 churn (clap 4.6, new crypto stack) as a side effect of a security bump.
 # Everything that builds core runs `stable` and users get prebuilt binaries, but README.md gives this floor to anyone building from source, so CI runs scripts/check-rust-floor.mjs to fail a manifest that names a crate needing more.

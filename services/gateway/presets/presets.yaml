@@ -1,4 +1,4 @@
-# Permaura marketplace presets: the ship-first tier-1 ten.
+# Permaura marketplace presets: the catalog every gateway ships.
 #
 # Each entry is pre-verified import arguments, loaded by services/gateway/src/presets.rs into the
 # same Capability/HttpSpec the OpenAPI importer produces. Only the HTTP shape is required per
@@ -233,3 +233,443 @@
     - { id: images.generate, method: POST, path: "/images/generations", body_params: [model, prompt, size], description: Generate an image (spends credit) }
     - { id: fine_tunes.create, method: POST, path: "/fine_tuning/jobs", body_params: [model, training_file], description: Start a fine-tune }
     - { id: files.delete, method: DELETE, path: "/files/{file_id}", path_params: [file_id], description: Delete a file }
+
+- id: braintree
+  name: Braintree
+  vertical: payments
+  description: "Run GraphQL documents against Braintree. One endpoint, so every call is approval-gated."
+  base_url: "https://payments.braintree-api.com"
+  logo: braintree
+  brand_color: "#000000"
+  auth: { scheme: basic }
+  static_headers: { Braintree-Version: "2026-01-01" }
+  redact_fields: [bin, last4, expirationMonth, expirationYear, cardholderName, email, phoneNumber, streetAddress, postalCode, clientToken, extendedAddress]
+  capabilities:
+    - { id: graphql.execute, method: POST, path: "/graphql", body_params: [query, variables, operationName], action: execute, risk: critical, requires_approval: true, disabled: true, description: "Run one GraphQL document against Braintree. A query and a money-moving mutation are the same HTTP call here, so they cannot be scoped apart; approval is the only gate." }
+
+- id: discord
+  name: Discord
+  vertical: comms
+  description: "Read guilds, channels, members and message history, and post to a channel."
+  base_url: "https://discord.com/api/v10"
+  logo: discord
+  brand_color: "#5865F2"
+  auth: { scheme: raw, header: Authorization, prefix: "Bot " }
+  static_headers: { User-Agent: "DiscordBot (https://permaura.com, 1.0)" }
+  redact_fields: [email, phone]
+  capabilities:
+    - { id: guilds.read, method: GET, path: "/guilds/{guild_id}", path_params: [guild_id], query_params: [with_counts], description: Read a guild's metadata }
+    - { id: channels.list, method: GET, path: "/guilds/{guild_id}/channels", path_params: [guild_id], description: List a guild's channels }
+    - { id: channels.read, method: GET, path: "/channels/{channel_id}", path_params: [channel_id], description: Read a channel }
+    - { id: members.list, method: GET, path: "/guilds/{guild_id}/members", path_params: [guild_id], query_params: [limit, after], description: List guild members (needs the Server Members intent) }
+    - { id: messages.list, method: GET, path: "/channels/{channel_id}/messages", path_params: [channel_id], query_params: [limit, before, after, around], description: Read a channel's message history }
+    - { id: messages.read, method: GET, path: "/channels/{channel_id}/messages/{message_id}", path_params: [channel_id, message_id], description: Read a single message }
+    - { id: messages.create, method: POST, path: "/channels/{channel_id}/messages", path_params: [channel_id], body_params: [content, embeds, tts, message_reference, allowed_mentions], requires_approval: true, description: Post a message to a channel (visible to everyone in it) }
+    - { id: messages.delete, method: DELETE, path: "/channels/{channel_id}/messages/{message_id}", path_params: [channel_id, message_id], description: Delete a message }
+
+- id: docusign
+  name: Docusign eSignature
+  vertical: comms
+  logo: docusign
+  description: "Read envelope status, recipients, documents and templates, and send envelopes for signature."
+  base_url: "https://demo.docusign.net/restapi"
+  brand_color: "#4C00FF"
+  auth: { scheme: bearer }
+  redact_fields: [email, fullName, firstName, lastName, userName, signerName, signerEmail, phoneNumber, faxNumber, ipAddress, accessCode, clientUserId]
+  oauth:
+    authorize_url: "https://account-d.docusign.com/oauth/auth"
+    token_url: "https://account-d.docusign.com/oauth/token"
+    scopes: [signature, extended]
+    pkce: true
+  capabilities:
+    - { id: envelopes.list, method: GET, path: "/v2.1/accounts/{accountId}/envelopes", path_params: [accountId], query_params: [from_date, to_date, status, search_text, count, start_position], description: List envelopes changed in a date range }
+    - { id: envelopes.read, method: GET, path: "/v2.1/accounts/{accountId}/envelopes/{envelopeId}", path_params: [accountId, envelopeId], query_params: [include], description: Read the status of one envelope }
+    - { id: recipients.list, method: GET, path: "/v2.1/accounts/{accountId}/envelopes/{envelopeId}/recipients", path_params: [accountId, envelopeId], query_params: [include_tabs, include_extended], description: List an envelope's recipients and their status }
+    - { id: documents.list, method: GET, path: "/v2.1/accounts/{accountId}/envelopes/{envelopeId}/documents", path_params: [accountId, envelopeId], query_params: [include_metadata], description: List the documents in an envelope }
+    - { id: documents.download, method: GET, path: "/v2.1/accounts/{accountId}/envelopes/{envelopeId}/documents/{documentId}", path_params: [accountId, envelopeId, documentId], query_params: [certificate, watermark, show_changes], description: Download one document as PDF }
+    - { id: templates.list, method: GET, path: "/v2.1/accounts/{accountId}/templates", path_params: [accountId], query_params: [search_text, order_by, count, start_position], description: List templates }
+    - { id: templates.read, method: GET, path: "/v2.1/accounts/{accountId}/templates/{templateId}", path_params: [accountId, templateId], query_params: [include], description: Read one template }
+    - { id: audit_events.list, method: GET, path: "/v2.1/accounts/{accountId}/envelopes/{envelopeId}/audit_events", path_params: [accountId, envelopeId], query_params: [locale], description: Read an envelope's audit trail }
+    - { id: envelopes.send, method: POST, path: "/v2.1/accounts/{accountId}/envelopes", path_params: [accountId], body_params: [status, emailSubject, emailBlurb, documents, recipients, templateId, templateRoles], action: send, risk: high, requires_approval: true, description: Create an envelope and email it to its recipients }
+
+- id: dropbox
+  name: Dropbox
+  vertical: data
+  description: "List, search and read file metadata, and manage folders and shared links."
+  base_url: "https://api.dropboxapi.com/2"
+  logo: dropbox
+  brand_color: "#0061FF"
+  auth: { scheme: bearer }
+  redact_fields: [email, given_name, surname, familiar_name, display_name, abbreviated_name, profile_photo_url, account_id, team_member_id, referral_link]
+  oauth:
+    authorize_url: "https://www.dropbox.com/oauth2/authorize"
+    token_url: "https://api.dropboxapi.com/oauth2/token"
+    scopes: [account_info.read, files.metadata.read, files.content.read, files.content.write, sharing.read, sharing.write]
+    pkce: true
+  capabilities:
+    - { id: files.list_folder, method: POST, path: "/files/list_folder", body_params: [path, recursive, limit, include_deleted], action: list, risk: medium, description: List the contents of a folder }
+    - { id: files.list_folder_continue, method: POST, path: "/files/list_folder/continue", body_params: [cursor], action: list, risk: medium, description: Fetch the next page of a folder listing }
+    - { id: files.search, method: POST, path: "/files/search_v2", body_params: [query, options, include_highlights], action: search, risk: medium, description: Search for files and folders by name }
+    - { id: files.get_metadata, method: POST, path: "/files/get_metadata", body_params: [path, include_deleted, include_media_info], action: read, risk: medium, description: Read the metadata of one file or folder }
+    - { id: files.get_temporary_link, method: POST, path: "/files/get_temporary_link", body_params: [path], action: read, risk: medium, description: Mint a four-hour direct link to a file's contents }
+    - { id: files.list_revisions, method: POST, path: "/files/list_revisions", body_params: [path, mode, limit], action: list, risk: medium, description: List the revisions of a file }
+    - { id: sharing.list_shared_links, method: POST, path: "/sharing/list_shared_links", body_params: [path, cursor, direct_only], action: list, risk: medium, description: List existing shared links }
+    - { id: account.read, method: POST, path: "/users/get_current_account", action: read, risk: medium, description: Read the account the token belongs to }
+    - { id: files.create_folder, method: POST, path: "/files/create_folder_v2", body_params: [path, autorename], description: Create a folder }
+    - { id: files.move, method: POST, path: "/files/move_v2", body_params: [from_path, to_path, autorename], action: update, risk: high, description: Move or rename a file or folder }
+    - { id: sharing.create_shared_link, method: POST, path: "/sharing/create_shared_link_with_settings", body_params: [path, settings], action: create, risk: high, requires_approval: true, description: Publish a shared link to a file or folder }
+    - { id: files.delete, method: POST, path: "/files/delete_v2", body_params: [path, parent_rev], action: delete, risk: critical, requires_approval: true, description: Delete a file or folder }
+
+- id: elevenlabs
+  name: ElevenLabs
+  vertical: data
+  description: "Browse voices and models, synthesise speech, and read generation history and account usage."
+  base_url: "https://api.elevenlabs.io"
+  logo: elevenlabs
+  brand_color: "#000000"
+  auth: { scheme: api_key_header, header: xi-api-key }
+  redact_fields: [xi_api_key, xi_api_key_preview, email]
+  capabilities:
+    - { id: voices.list, method: GET, path: "/v2/voices", query_params: [search, page_size, next_page_token, voice_type, category], description: List and search your voices }
+    - { id: voices.read, method: GET, path: "/v1/voices/{voice_id}", path_params: [voice_id], description: Retrieve a voice }
+    - { id: shared_voices.search, method: GET, path: "/v1/shared-voices", query_params: [search, page_size, page, gender, language, category], description: Search the public Voice Library }
+    - { id: models.list, method: GET, path: "/v1/models", description: List available models }
+    - { id: subscription.read, method: GET, path: "/v1/user/subscription", description: "Read plan, character usage and limit" }
+    - { id: history.list, method: GET, path: "/v1/history", query_params: [page_size, start_after_history_item_id, voice_id, search, source, sort_direction], description: List generated items }
+    - { id: history.read, method: GET, path: "/v1/history/{history_item_id}", path_params: [history_item_id], description: Retrieve a history item }
+    - { id: dubbing.list, method: GET, path: "/v1/dubbing", query_params: [page_size, cursor, dubbing_status, filter_by_creator], description: List dubbing jobs }
+    - { id: dubbing.read, method: GET, path: "/v1/dubbing/{dubbing_id}", path_params: [dubbing_id], description: Read a dubbing job's status }
+    - { id: speech.create, method: POST, path: "/v1/text-to-speech/{voice_id}/with-timestamps", path_params: [voice_id], query_params: [output_format, enable_logging], body_params: [text, model_id, language_code, voice_settings], requires_approval: true, description: "Synthesise speech; returns base64 audio (spends credits)" }
+    - { id: history.delete, method: DELETE, path: "/v1/history/{history_item_id}", path_params: [history_item_id], description: Delete a history item }
+
+- id: fal
+  name: fal
+  label: Queue API
+  vertical: data
+  logo: fal
+  description: "Submit jobs to fal.ai generative models, then poll status and fetch results."
+  base_url: "https://queue.fal.run"
+  brand_color: "#000000"
+  auth: { scheme: raw, header: Authorization, prefix: "Key " }
+  capabilities:
+    - { id: queue.status, method: GET, path: "/{owner}/{model}/requests/{request_id}/status", path_params: [owner, model, request_id], query_params: [logs], description: "Poll a request, whatever the model id: fal keeps only the first two segments in the queue path, so fal-ai/flux/dev is polled at fal-ai/flux" }
+    - { id: queue.result, method: GET, path: "/{owner}/{model}/requests/{request_id}", path_params: [owner, model, request_id], description: "Fetch the result of a request, whatever the model id: fal keeps only the first two segments in the queue path" }
+    - { id: queue.submit, method: POST, path: "/{owner}/{model}", path_params: [owner, model], body_params: [prompt, negative_prompt, image_url, image_size, num_images, num_inference_steps, guidance_scale, seed, output_format], requires_approval: true, description: Submit a job to a two-part model id such as fal-ai/nano-banana (spends credit) }
+    - { id: queue.submit_variant, method: POST, path: "/{owner}/{model}/{variant}", path_params: [owner, model, variant], body_params: [prompt, negative_prompt, image_url, image_size, num_images, num_inference_steps, guidance_scale, seed, output_format], requires_approval: true, description: Submit a job to a three-part model id such as fal-ai/flux/dev (spends credit) }
+    - { id: image.generate, method: POST, path: "/fal-ai/flux/dev", body_params: [prompt, image_size, num_images, num_inference_steps, guidance_scale, seed, output_format], requires_approval: true, description: "Generate an image with FLUX.1 [dev], pinned to that model (spends credit)" }
+    - { id: image.generate_fast, method: POST, path: "/fal-ai/flux/schnell", body_params: [prompt, image_size, num_images, num_inference_steps, guidance_scale, seed, output_format], requires_approval: true, description: "Generate an image with FLUX.1 [schnell], pinned to that model (spends credit)" }
+    - { id: queue.cancel, method: PUT, path: "/{owner}/{model}/requests/{request_id}/cancel", path_params: [owner, model, request_id], description: "Cancel a request, whatever the model id: fal keeps only the first two segments in the queue path" }
+
+- id: google-analytics
+  name: Google Analytics
+  label: Data API (OAuth only)
+  vertical: data
+  description: "Run GA4 reports, realtime reports and metadata queries on a property."
+  base_url: "https://analyticsdata.googleapis.com/v1beta"
+  logo: googleanalytics
+  brand_color: "#E37400"
+  auth: { scheme: bearer }
+  oauth:
+    authorize_url: "https://accounts.google.com/o/oauth2/v2/auth"
+    token_url: "https://oauth2.googleapis.com/token"
+    scopes: ["https://www.googleapis.com/auth/analytics.readonly"]
+    pkce: true
+  capabilities:
+    - { id: reports.run, method: POST, path: "/properties/{property}:runReport", path_params: [property], body_params: [dimensions, metrics, dateRanges, dimensionFilter, metricFilter, orderBys, limit, offset, metricAggregations, returnPropertyQuota], action: read, risk: medium, description: Run a GA4 report }
+    - { id: reports.batch_run, method: POST, path: "/properties/{property}:batchRunReports", path_params: [property], body_params: [requests], action: read, risk: medium, description: Run up to five reports in one call }
+    - { id: reports.run_pivot, method: POST, path: "/properties/{property}:runPivotReport", path_params: [property], body_params: [dimensions, metrics, dateRanges, pivots, dimensionFilter, metricFilter, returnPropertyQuota], action: read, risk: medium, description: Run a pivot report }
+    - { id: realtime.run, method: POST, path: "/properties/{property}:runRealtimeReport", path_params: [property], body_params: [dimensions, metrics, minuteRanges, dimensionFilter, metricAggregations, orderBys, limit, returnPropertyQuota], action: read, risk: medium, description: Run a realtime report (last 30 minutes) }
+    - { id: compatibility.check, method: POST, path: "/properties/{property}:checkCompatibility", path_params: [property], body_params: [dimensions, metrics, dimensionFilter, metricFilter, compatibilityFilter], action: read, risk: medium, description: Check which dimensions and metrics can be combined }
+    - { id: metadata.read, method: GET, path: "/properties/{property}/metadata", path_params: [property], description: List the dimensions and metrics the property supports }
+    - { id: audience_exports.list, method: GET, path: "/properties/{property}/audienceExports", path_params: [property], query_params: [pageSize, pageToken], action: list, risk: medium, description: List audience export jobs (metadata only) }
+    - { id: audience_exports.create, method: POST, path: "/properties/{property}/audienceExports", path_params: [property], body_params: [audience, dimensions], description: Start an audience export job (charges quota tokens) }
+    - { id: audience_exports.query, method: POST, path: "/properties/{property}/audienceExports/{audience_export}:query", path_params: [property, audience_export], body_params: [offset, limit], action: export, risk: high, requires_approval: true, description: Read the user-level rows of a finished audience export }
+
+- id: google-calendar
+  name: Google Calendar
+  vertical: comms
+  description: "List calendars and events, check free/busy, and create or amend meetings."
+  base_url: "https://www.googleapis.com/calendar/v3"
+  logo: googlecalendar
+  brand_color: "#4285F4"
+  auth: { scheme: bearer }
+  redact_fields: [email]
+  oauth:
+    authorize_url: "https://accounts.google.com/o/oauth2/v2/auth"
+    token_url: "https://oauth2.googleapis.com/token"
+    scopes: ["https://www.googleapis.com/auth/calendar.readonly", "https://www.googleapis.com/auth/calendar.events"]
+    pkce: true
+  capabilities:
+    - { id: calendars.list, method: GET, path: "/users/me/calendarList", query_params: [maxResults, pageToken, minAccessRole, showHidden, showDeleted], description: List the calendars on the account }
+    - { id: calendars.get, method: GET, path: "/calendars/{calendarId}", path_params: [calendarId], description: Read one calendar's metadata and time zone }
+    - { id: events.list, method: GET, path: "/calendars/{calendarId}/events", path_params: [calendarId], query_params: [timeMin, timeMax, q, singleEvents, orderBy, maxResults, pageToken, showDeleted, eventTypes], description: List or search events in a time window }
+    - { id: events.get, method: GET, path: "/calendars/{calendarId}/events/{eventId}", path_params: [calendarId, eventId], query_params: [maxAttendees, timeZone], description: Read a single event }
+    - { id: events.instances, method: GET, path: "/calendars/{calendarId}/events/{eventId}/instances", path_params: [calendarId, eventId], query_params: [timeMin, timeMax, maxResults, pageToken, showDeleted], description: List the occurrences of a recurring event }
+    - { id: freebusy.query, method: POST, path: "/freeBusy", body_params: [timeMin, timeMax, timeZone, items, calendarExpansionMax, groupExpansionMax], action: read, risk: medium, description: Look up busy blocks across calendars (read-only despite the POST) }
+    - { id: events.create, method: POST, path: "/calendars/{calendarId}/events", path_params: [calendarId], query_params: [conferenceDataVersion, sendUpdates, maxAttendees, supportsAttachments], body_params: [summary, description, location, start, end, attendees, conferenceData, recurrence, reminders, visibility], requires_approval: true, description: "Create an event, optionally with a Meet link via conferenceData" }
+    - { id: events.update, method: PUT, path: "/calendars/{calendarId}/events/{eventId}", path_params: [calendarId, eventId], query_params: [conferenceDataVersion, sendUpdates, maxAttendees, supportsAttachments], body_params: [summary, description, location, start, end, attendees, conferenceData, recurrence, reminders, status], requires_approval: true, description: "Replace an event (send the whole resource, not a partial)" }
+    - { id: events.delete, method: DELETE, path: "/calendars/{calendarId}/events/{eventId}", path_params: [calendarId, eventId], query_params: [sendUpdates], description: Cancel and remove an event }
+
+- id: google-drive
+  name: Google Drive
+  vertical: data
+  description: "Search Drive, read file metadata, download or export documents, and manage folders."
+  base_url: "https://www.googleapis.com/drive/v3"
+  logo: googledrive
+  brand_color: "#4285F4"
+  auth: { scheme: bearer }
+  redact_fields: [emailAddress, photoLink]
+  oauth:
+    authorize_url: "https://accounts.google.com/o/oauth2/v2/auth"
+    token_url: "https://oauth2.googleapis.com/token"
+    scopes: ["https://www.googleapis.com/auth/drive.readonly", "https://www.googleapis.com/auth/drive.file"]
+    pkce: true
+  capabilities:
+    - { id: files.list, method: GET, path: "/files", query_params: [q, pageSize, pageToken, orderBy, fields, spaces, corpora, driveId, includeItemsFromAllDrives, supportsAllDrives], description: List or search files with a Drive query }
+    - { id: files.get, method: GET, path: "/files/{fileId}", path_params: [fileId], query_params: [fields, supportsAllDrives, includeLabels], description: Read a file's metadata }
+    - { id: files.download, method: GET, path: "/files/{fileId}", path_params: [fileId], query_params: [alt, acknowledgeAbuse, supportsAllDrives], description: "Download a binary file's content (send alt=media)" }
+    - { id: files.export, method: GET, path: "/files/{fileId}/export", path_params: [fileId], query_params: [mimeType], description: "Export a Google Docs, Sheets or Slides file to another format" }
+    - { id: permissions.list, method: GET, path: "/files/{fileId}/permissions", path_params: [fileId], query_params: [pageSize, pageToken, fields, supportsAllDrives], description: List who a file is shared with }
+    - { id: folders.create, method: POST, path: "/files", query_params: [supportsAllDrives, fields], body_params: [name, mimeType, parents, description], description: Create a folder (mimeType application/vnd.google-apps.folder) }
+    - { id: files.copy, method: POST, path: "/files/{fileId}/copy", path_params: [fileId], query_params: [supportsAllDrives, fields], body_params: [name, parents], description: Copy a file }
+    - { id: files.update, method: PATCH, path: "/files/{fileId}", path_params: [fileId], query_params: [addParents, removeParents, supportsAllDrives, fields], body_params: [name, description, starred, trashed], description: "Update a file's metadata, or move it between folders" }
+    - { id: files.delete, method: DELETE, path: "/files/{fileId}", path_params: [fileId], query_params: [supportsAllDrives], description: "Permanently delete a file, bypassing the trash" }
+
+- id: google-meet
+  name: Google Meet
+  vertical: comms
+  description: "Read conference records, participants, recordings and transcripts, and open an instant meeting space."
+  base_url: "https://meet.googleapis.com/v2"
+  logo: googlemeet
+  brand_color: "#00897B"
+  auth: { scheme: bearer }
+  oauth:
+    authorize_url: "https://accounts.google.com/o/oauth2/v2/auth"
+    token_url: "https://oauth2.googleapis.com/token"
+    scopes: ["https://www.googleapis.com/auth/meetings.space.readonly", "https://www.googleapis.com/auth/meetings.space.created"]
+    pkce: true
+  capabilities:
+    - { id: spaces.get, method: GET, path: "/spaces/{space}", path_params: [space], description: Read a meeting space by id or meeting code }
+    - { id: conference_records.list, method: GET, path: "/conferenceRecords", query_params: [filter, pageSize, pageToken], description: List past and active conferences }
+    - { id: conference_records.get, method: GET, path: "/conferenceRecords/{conferenceRecord}", path_params: [conferenceRecord], description: Read one conference record }
+    - { id: participants.list, method: GET, path: "/conferenceRecords/{conferenceRecord}/participants", path_params: [conferenceRecord], query_params: [filter, pageSize, pageToken], description: List who attended a conference }
+    - { id: participant_sessions.list, method: GET, path: "/conferenceRecords/{conferenceRecord}/participants/{participant}/participantSessions", path_params: [conferenceRecord, participant], query_params: [filter, pageSize, pageToken], description: List a participant's join and leave sessions }
+    - { id: recordings.list, method: GET, path: "/conferenceRecords/{conferenceRecord}/recordings", path_params: [conferenceRecord], query_params: [pageSize, pageToken], description: List a conference's recordings and their Drive location }
+    - { id: transcripts.list, method: GET, path: "/conferenceRecords/{conferenceRecord}/transcripts", path_params: [conferenceRecord], query_params: [pageSize, pageToken], description: List a conference's transcripts }
+    - { id: transcript_entries.list, method: GET, path: "/conferenceRecords/{conferenceRecord}/transcripts/{transcript}/entries", path_params: [conferenceRecord, transcript], query_params: [pageSize, pageToken], description: "Read what was said, entry by entry" }
+    - { id: spaces.create, method: POST, path: "/spaces", body_params: [config], description: Create an instant meeting space and return its meet.google.com link }
+    - { id: spaces.end_active_conference, method: POST, path: "/spaces/{space}:endActiveConference", path_params: [space], action: execute, risk: critical, requires_approval: true, description: End the conference that is running in a space right now }
+
+- id: google-veo
+  name: Google Veo
+  label: via the Gemini API
+  vertical: data
+  description: "Generate video with Veo, poll the job, and inspect models and files."
+  base_url: "https://generativelanguage.googleapis.com/v1beta"
+  logo: googlegemini
+  brand_color: "#8E75B2"
+  auth: { scheme: api_key_header, header: x-goog-api-key }
+  capabilities:
+    - { id: videos.generate, method: POST, path: "/models/{model}:predictLongRunning", path_params: [model], body_params: [instances, parameters], requires_approval: true, description: "Start a Veo video generation (spends credit; returns a long-running operation)" }
+    - { id: operations.read, method: GET, path: "/models/{model}/operations/{operation_id}", path_params: [model, operation_id], description: Poll a generation operation until done }
+    - { id: generated_files.list, method: GET, path: "/generatedFiles", query_params: [pageSize, pageToken], description: "List the files Veo has generated for this project, with their state" }
+    - { id: models.list, method: GET, path: "/models", query_params: [pageSize, pageToken], description: List available models }
+    - { id: models.read, method: GET, path: "/models/{model}", path_params: [model], description: Read a model's metadata }
+    - { id: files.list, method: GET, path: "/files", query_params: [pageSize, pageToken], description: List files held by the API }
+    - { id: files.read, method: GET, path: "/files/{file}", path_params: [file], description: Read a file's metadata }
+    - { id: files.delete, method: DELETE, path: "/files/{file}", path_params: [file], description: Delete a file }
+
+- id: heygen
+  name: HeyGen
+  vertical: data
+  logo: heygen
+  description: "Browse avatars and voices, render AI avatar videos, and poll render status and credits."
+  base_url: "https://api.heygen.com"
+  brand_color: "#00C3FF"
+  auth: { scheme: api_key_header, header: X-Api-Key }
+  redact_fields: [email, first_name, last_name, username]
+  capabilities:
+    - { id: avatars.list, method: GET, path: "/v3/avatars", query_params: [ownership, limit, token], description: List avatar groups (characters) }
+    - { id: avatar_looks.list, method: GET, path: "/v3/avatars/looks", query_params: [group_id, avatar_type, ownership, limit, token], description: "List avatar looks; a look id is the avatar_id" }
+    - { id: voices.list, method: GET, path: "/v3/voices", query_params: [type, engine, language, gender, limit, token], description: List voices }
+    - { id: voices.read, method: GET, path: "/v3/voices/{voice_id}", path_params: [voice_id], description: Retrieve a voice }
+    - { id: videos.list, method: GET, path: "/v3/videos", query_params: [limit, token, folder_id, title], description: List videos }
+    - { id: videos.read, method: GET, path: "/v3/videos/{video_id}", path_params: [video_id], description: Read a video's render status and URL }
+    - { id: templates.list, method: GET, path: "/v3/templates", query_params: [limit, token], description: List Studio templates }
+    - { id: video_translations.list, method: GET, path: "/v3/video-translations", query_params: [limit, token], description: List video translation jobs }
+    - { id: user.read, method: GET, path: "/v3/users/me", description: Read account credits and billing type }
+    - { id: videos.create, method: POST, path: "/v3/videos", body_params: [type, avatar_id, script, voice_id, title, aspect_ratio, resolution], requires_approval: true, description: Render an avatar video (spends credits) }
+    - { id: speech.create, method: POST, path: "/v3/voices/speech", body_params: [text, voice_id, input_type, speed, language], requires_approval: true, description: Synthesise speech with a Starfish voice (spends credits) }
+    - { id: videos.delete, method: DELETE, path: "/v3/videos/{video_id}", path_params: [video_id], description: Permanently delete a video }
+
+- id: mailchimp
+  name: Mailchimp
+  vertical: comms
+  description: "Read audiences, members, campaigns and reports; send a campaign with approval."
+  base_url: "https://us1.api.mailchimp.com/3.0"
+  logo: mailchimp
+  brand_color: "#FFE01B"
+  auth: { scheme: basic }
+  redact_fields: [email_address, full_name, merge_fields, unique_email_id, ip_signup, ip_opt, location, address, sms_phone_number]
+  oauth:
+    authorize_url: "https://login.mailchimp.com/oauth2/authorize"
+    token_url: "https://login.mailchimp.com/oauth2/token"
+    pkce: false
+  capabilities:
+    - { id: api.ping, method: GET, path: "/ping", description: Health check for the API and the credential }
+    - { id: audiences.list, method: GET, path: "/lists", query_params: [count, offset, fields, sort_field, sort_dir], description: List audiences }
+    - { id: audiences.read, method: GET, path: "/lists/{list_id}", path_params: [list_id], query_params: [fields, include_total_contacts], description: Read an audience }
+    - { id: members.list, method: GET, path: "/lists/{list_id}/members", path_params: [list_id], query_params: [count, offset, status, since_last_changed, sort_field, sort_dir], description: List members of an audience }
+    - { id: members.read, method: GET, path: "/lists/{list_id}/members/{subscriber_hash}", path_params: [list_id, subscriber_hash], query_params: [fields], description: Read an audience member }
+    - { id: campaigns.list, method: GET, path: "/campaigns", query_params: [count, offset, type, status, list_id, since_send_time, sort_field, sort_dir], description: List campaigns }
+    - { id: campaigns.read, method: GET, path: "/campaigns/{campaign_id}", path_params: [campaign_id], query_params: [fields], description: Read a campaign }
+    - { id: reports.read, method: GET, path: "/reports/{campaign_id}", path_params: [campaign_id], query_params: [fields], description: Read a campaign report }
+    - { id: members.upsert, method: PUT, path: "/lists/{list_id}/members/{subscriber_hash}", path_params: [list_id, subscriber_hash], body_params: [email_address, status_if_new, status, merge_fields], requires_approval: true, description: Add or update an audience member }
+    - { id: campaigns.send, method: POST, path: "/campaigns/{campaign_id}/actions/send", path_params: [campaign_id], action: send, risk: critical, requires_approval: true, description: Send a campaign to its configured recipients (immediate and irreversible) }
+
+- id: openrouter
+  name: OpenRouter
+  vertical: data
+  description: "Route chat completions across many LLM providers, and read model pricing and spend."
+  base_url: "https://openrouter.ai/api/v1"
+  logo: openrouter
+  brand_color: "#94A3B8"
+  auth: { scheme: bearer }
+  capabilities:
+    - { id: models.list, method: GET, path: "/models", query_params: [q, category, sort, limit, offset, supported_parameters], description: List available models with pricing and context length }
+    - { id: models.read, method: GET, path: "/model/{author}/{slug}", path_params: [author, slug], description: Read one model by its slug }
+    - { id: models.endpoints, method: GET, path: "/models/{author}/{slug}/endpoints", path_params: [author, slug], description: List the provider endpoints serving a model }
+    - { id: providers.list, method: GET, path: "/providers", description: List the upstream providers OpenRouter routes to }
+    - { id: generation.read, method: GET, path: "/generation", query_params: [id], description: "Read cost, token counts and routing metadata for one generation" }
+    - { id: key.read, method: GET, path: "/key", description: "Read the current key's label, spend limit and usage" }
+    - { id: credits.read, method: GET, path: "/credits", description: Read total credits purchased and used (management key only) }
+    - { id: chat.completions.create, method: POST, path: "/chat/completions", body_params: [model, models, messages, provider, temperature, max_tokens, top_p, stop, response_format, tools, tool_choice, reasoning], requires_approval: true, description: Create a chat completion (spends credit) }
+
+- id: paddle
+  name: Paddle
+  vertical: payments
+  description: "Read products, prices, customers, subscriptions and transactions in Paddle Billing."
+  base_url: "https://api.paddle.com"
+  logo: paddle
+  brand_color: "#FDDD35"
+  auth: { scheme: bearer }
+  static_headers: { Paddle-Version: "1" }
+  redact_fields: [email, first_line, second_line, city, postal_code, cardholder_name, last4, expiry_month, expiry_year, customer_ip_address]
+  capabilities:
+    - { id: products.list, method: GET, path: "/products", query_params: [status, type, per_page, after], description: List products }
+    - { id: products.read, method: GET, path: "/products/{product_id}", path_params: [product_id], query_params: [include], description: Retrieve a product }
+    - { id: prices.list, method: GET, path: "/prices", query_params: [id, product_id, status, recurring, per_page, after], description: List prices }
+    - { id: customers.list, method: GET, path: "/customers", query_params: [email, search, status, per_page, after], description: List customers }
+    - { id: customers.read, method: GET, path: "/customers/{customer_id}", path_params: [customer_id], description: Retrieve a customer }
+    - { id: subscriptions.list, method: GET, path: "/subscriptions", query_params: [customer_id, price_id, status, per_page, after], description: List subscriptions }
+    - { id: subscriptions.read, method: GET, path: "/subscriptions/{subscription_id}", path_params: [subscription_id], query_params: [include], description: Retrieve a subscription }
+    - { id: transactions.list, method: GET, path: "/transactions", query_params: [customer_id, subscription_id, status, billed_at, per_page, after], description: List transactions }
+    - { id: transactions.read, method: GET, path: "/transactions/{transaction_id}", path_params: [transaction_id], query_params: [include], description: Retrieve a transaction }
+    - { id: transactions.create, method: POST, path: "/transactions", body_params: [items, customer_id, address_id, currency_code, collection_mode, status], risk: critical, requires_approval: true, description: "Create a billable transaction: invoices the customer when marked billed, or returns a checkout to collect payment" }
+    - { id: adjustments.create, method: POST, path: "/adjustments", body_params: [action, transaction_id, reason, type, items], action: refund, risk: critical, requires_approval: true, description: Refund or credit a transaction }
+    - { id: subscriptions.cancel, method: POST, path: "/subscriptions/{subscription_id}/cancel", path_params: [subscription_id], body_params: [effective_from], action: delete, risk: critical, requires_approval: true, description: Cancel a subscription }
+
+- id: square
+  name: Square
+  vertical: payments
+  description: "Read locations, payments, orders, customers and catalog items."
+  base_url: "https://connect.squareup.com/v2"
+  logo: square
+  brand_color: "#3E4348"
+  auth: { scheme: bearer }
+  static_headers: { Square-Version: "2026-07-15" }
+  redact_fields: [last_4, exp_month, exp_year, cardholder_name, billing_address, shipping_address, email_address, customer.phone_number, customers.phone_number, recipient.phone_number, buyer_email_address, customer.address, customers.address, recipient.address]
+  oauth:
+    authorize_url: "https://connect.squareup.com/oauth2/authorize"
+    token_url: "https://connect.squareup.com/oauth2/token"
+    scopes: [MERCHANT_PROFILE_READ, PAYMENTS_READ, ORDERS_READ, CUSTOMERS_READ, ITEMS_READ]
+    pkce: true
+  capabilities:
+    - { id: locations.list, method: GET, path: "/locations", description: List the seller's locations }
+    - { id: payments.list, method: GET, path: "/payments", query_params: [begin_time, end_time, location_id, sort_order, cursor, limit], description: List payments }
+    - { id: payments.read, method: GET, path: "/payments/{payment_id}", path_params: [payment_id], description: Retrieve a payment }
+    - { id: orders.search, method: POST, path: "/orders/search", body_params: [location_ids, query, cursor, limit, return_entries], action: search, risk: medium, description: Search orders }
+    - { id: orders.read, method: GET, path: "/orders/{order_id}", path_params: [order_id], description: Retrieve an order }
+    - { id: customers.list, method: GET, path: "/customers", query_params: [cursor, limit, sort_field, sort_order], description: List customers }
+    - { id: customers.read, method: GET, path: "/customers/{customer_id}", path_params: [customer_id], description: Retrieve a customer }
+    - { id: catalog.list, method: GET, path: "/catalog/list", query_params: [types, cursor], description: List catalog items }
+    - { id: payments.create, method: POST, path: "/payments", body_params: [source_id, idempotency_key, amount_money, location_id, customer_id, autocomplete], action: charge, risk: critical, requires_approval: true, description: Take a payment (moves real money) }
+    - { id: refunds.create, method: POST, path: "/refunds", body_params: [idempotency_key, amount_money, payment_id, reason], description: Refund a payment }
+
+- id: xero
+  name: Xero
+  vertical: payments
+  description: "Read invoices, contacts, accounts, bank transactions and reports."
+  base_url: "https://api.xero.com/api.xro/2.0"
+  logo: xero
+  brand_color: "#13B5EA"
+  auth: { scheme: bearer }
+  static_headers: { Accept: application/json }
+  redact_fields: [EmailAddress, Contacts.Phones, Contact.Phones, Contacts.Addresses, Contact.Addresses, BankAccountNumber, Contacts.TaxNumber, Contact.TaxNumber, Contacts.BankAccountDetails, Contact.BankAccountDetails]
+  oauth:
+    authorize_url: "https://login.xero.com/identity/connect/authorize"
+    token_url: "https://identity.xero.com/connect/token"
+    scopes: [offline_access, accounting.transactions.read, accounting.contacts.read, accounting.settings.read, accounting.reports.read]
+    pkce: true
+  capabilities:
+    - { id: invoices.list, method: GET, path: "/Invoices", query_params: [where, order, Statuses, ContactIDs, InvoiceNumbers, page], description: List sales invoices and purchase bills }
+    - { id: invoices.read, method: GET, path: "/Invoices/{InvoiceID}", path_params: [InvoiceID], description: Retrieve one invoice }
+    - { id: contacts.list, method: GET, path: "/Contacts", query_params: [where, order, searchTerm, includeArchived, page], description: List contacts }
+    - { id: contacts.read, method: GET, path: "/Contacts/{ContactID}", path_params: [ContactID], description: Retrieve one contact }
+    - { id: accounts.list, method: GET, path: "/Accounts", query_params: [where, order], description: Read the chart of accounts }
+    - { id: bank_transactions.list, method: GET, path: "/BankTransactions", query_params: [where, order, page], description: List spent and received money transactions }
+    - { id: reports.profit_and_loss, method: GET, path: "/Reports/ProfitAndLoss", query_params: [fromDate, toDate, periods, timeframe, standardLayout], description: Run the profit and loss report }
+    - { id: reports.balance_sheet, method: GET, path: "/Reports/BalanceSheet", query_params: [date, periods, timeframe, standardLayout], description: Run the balance sheet report }
+    - { id: organisation.read, method: GET, path: "/Organisation", description: Read the organisation this connection points at }
+    - { id: invoices.create, method: PUT, path: "/Invoices", query_params: [summarizeErrors, unitdp], body_params: [Invoices], action: create, risk: high, requires_approval: true, description: Create one or more invoices }
+
+
+- id: events-manager
+  name: Events Manager
+  label: Your own events site
+  logo: events-manager
+  vertical: crm
+  description: "Read and manage events, locations, tickets and bookings on a WordPress site running Events Manager. Connects with a WordPress application password."
+  base_url: "https://{site}/wp-json/events-manager/v1"
+  auth: { scheme: basic }
+  redact_fields: [email, user_email, dbem_phone, phone, ip, ip_address, author_ip, author_user_agent]
+  wordpress: { namespace: events-manager/v1 }
+  capabilities:
+    - { id: events.list, method: GET, path: "/events", query_params: [page, per_page, search, context, scope, status, active_status, cancelled, active, category, tag, location, location_id, town, state, country, region, near, near_unit, near_distance, event_type, event_archetype, orderby, order, private, private_only, timeslots], description: List events }
+    - { id: events.read, method: GET, path: "/events/{id}", path_params: [id], query_params: [context], description: "Retrieve an event (an id with a timeslot suffix, such as 123:4, reads one timeslot)" }
+    - { id: events.availability, method: GET, path: "/events/{id}/availability", path_params: [id], description: Read an event's booking availability and ticket spaces }
+    - { id: events.tickets.list, method: GET, path: "/events/{id}/tickets", path_params: [id], query_params: [page, per_page], description: List an event's tickets }
+    - { id: events.create, method: POST, path: "/events", body_params: [event_name, content, event_type, event_archetype, post_status, featured_image, featured_image_alt, event_start_date, event_end_date, event_start_time, event_end_time, event_rsvp_date, event_rsvp_time, event_timezone, event_all_day, event_timeranges, event_rsvp, event_rsvp_spaces, event_spaces, event_active_status, event_private, location_id, location_name, location_address, location_town, location_state, location_postcode, location_region, location_country, location_latitude, location_longitude, location_type, location_url, event_location_url, event_location_url_text, event_categories, event_tags, categories, tags, em_tickets, em_attributes, em_coupons, waitlist, waitlist_booking_limit, waitlist_expiry, waitlist_limit, rsvp_policy, rsvp_policy_type, bookings_can_cancel, bookings_can_cancel_time, minimum_capacity_spaces, minimum_capacity_time, dependent_event, custom_attendee_form, custom_booking_form, recurrence_rsvp_days, recurrence_rsvp_days_when], description: Create an event }
+    - { id: events.update, method: PATCH, path: "/events/{id}", path_params: [id], body_params: [event_name, content, event_type, event_archetype, post_status, featured_image, featured_image_alt, event_start_date, event_end_date, event_start_time, event_end_time, event_rsvp_date, event_rsvp_time, event_timezone, event_all_day, event_timeranges, event_rsvp, event_rsvp_spaces, event_spaces, event_active_status, event_private, location_id, location_name, location_address, location_town, location_state, location_postcode, location_region, location_country, location_latitude, location_longitude, location_type, location_url, event_location_url, event_location_url_text, event_categories, event_tags, categories, tags, em_tickets, em_attributes, em_coupons, waitlist, waitlist_booking_limit, waitlist_expiry, waitlist_limit, rsvp_policy, rsvp_policy_type, bookings_can_cancel, bookings_can_cancel_time, minimum_capacity_spaces, minimum_capacity_time, dependent_event, custom_attendee_form, custom_booking_form, recurrence_rsvp_days, recurrence_rsvp_days_when], description: Update an event }
+    - { id: events.delete, method: DELETE, path: "/events/{id}", path_params: [id], query_params: [force], description: "Trash an event, or delete it permanently with force" }
+    - { id: tickets.read, method: GET, path: "/tickets/{id}", path_params: [id], query_params: [context], description: Retrieve a ticket }
+    - { id: tickets.create, method: POST, path: "/events/{id}/tickets", path_params: [id], body_params: [ticket_name, ticket_description, ticket_status, ticket_price, ticket_spaces, ticket_min, ticket_max, ticket_required, ticket_type, ticket_members_roles, ticket_start, ticket_end, ticket_start_time, ticket_end_time, ticket_order], description: Add a ticket to an event }
+    - { id: tickets.update, method: PATCH, path: "/tickets/{id}", path_params: [id], body_params: [ticket_name, ticket_description, ticket_status, ticket_price, ticket_spaces, ticket_min, ticket_max, ticket_required, ticket_type, ticket_members_roles, ticket_start, ticket_end, ticket_start_time, ticket_end_time, ticket_order], description: Update a ticket }
+    - { id: tickets.delete, method: DELETE, path: "/tickets/{id}", path_params: [id], query_params: [force], description: Delete a ticket that has no bookings }
+    - { id: locations.list, method: GET, path: "/locations", query_params: [page, per_page, search, context, scope, status, eventful, eventless, category, tag, town, state, country, region, near, near_unit, near_distance, orderby, order, private, private_only], description: List locations }
+    - { id: locations.read, method: GET, path: "/locations/{id}", path_params: [id], query_params: [context], description: Retrieve a location }
+    - { id: locations.countries, method: GET, path: "/locations/countries", query_params: [only_available, search], description: "List countries, or only those with a location" }
+    - { id: locations.regions, method: GET, path: "/locations/regions", query_params: [country, search], description: List the regions locations are in }
+    - { id: locations.states, method: GET, path: "/locations/states", query_params: [country, region, search], description: List the states and provinces locations are in }
+    - { id: locations.towns, method: GET, path: "/locations/towns", query_params: [country, region, state, search], description: List the towns and cities locations are in }
+    - { id: locations.create, method: POST, path: "/locations", body_params: [location_name, content, post_status, location_address, location_town, location_state, location_postcode, location_region, location_country, location_latitude, location_longitude, featured_image, featured_image_alt, em_attributes], description: Create a location }
+    - { id: locations.update, method: PATCH, path: "/locations/{id}", path_params: [id], body_params: [location_name, content, post_status, location_address, location_town, location_state, location_postcode, location_region, location_country, location_latitude, location_longitude, featured_image, featured_image_alt, em_attributes], description: Update a location }
+    - { id: locations.delete, method: DELETE, path: "/locations/{id}", path_params: [id], query_params: [force], description: "Trash a location, or delete it permanently with force" }
+    - { id: bookings.list, method: GET, path: "/bookings", query_params: [page, per_page, search, scope, context, event, event_id, status, rsvp_status, person, ticket_id, booking_id, orderby, order, timeslot_id], description: List bookings }
+    - { id: bookings.read, method: GET, path: "/bookings/{id}", path_params: [id], query_params: [context], description: Retrieve a booking by id or UUID }
+    - { id: bookings.create, method: POST, path: "/bookings", body_params: [event_id, em_tickets, user_name, user_email, dbem_phone, person, dbem_country, booking_comment, gateway, coupon_code, waitlist, waitlist_spaces, waitlist_booking_uuid, donation_amount, terms_agreement, recurrence_timezone, booking, booking_fields, registration, send_email, person_id, manual_booking, data_privacy_consent, data_comms_consent], requires_approval: true, description: Create a booking (may email the attendee and the event owner) }
+    - { id: bookings.update, method: PATCH, path: "/bookings/{id}", path_params: [id], body_params: [event_id, em_tickets, user_name, user_email, dbem_phone, person, dbem_country, booking_comment, gateway, coupon_code, waitlist, waitlist_spaces, waitlist_booking_uuid, donation_amount, terms_agreement, recurrence_timezone, booking, booking_fields, registration, send_email, person_id, manual_booking, data_privacy_consent, data_comms_consent], requires_approval: true, description: Update a booking }
+    - { id: bookings.status, method: POST, path: "/bookings/{id}/status", path_params: [id], body_params: [status, send_email, ignore_spaces], action: update, risk: high, requires_approval: true, description: "Approve, reject or cancel a booking, optionally emailing the attendee" }
+    - { id: bookings.delete, method: DELETE, path: "/bookings/{id}", path_params: [id], description: Permanently delete a booking }
+    - { id: media.upload, method: POST, path: "/media", body_params: [source_url, content_base64, filename, mime_type, title, alt_text, caption, description, post_id, featured_image_for_event, featured_image_for_location], description: Upload an image to the media library from a public URL or base64 bytes }
+    - { id: categories.list, method: GET, path: "/categories", query_params: [page, per_page, search, hide_empty], description: List event categories }
+    - { id: categories.read, method: GET, path: "/categories/{id}", path_params: [id], description: Retrieve an event category }
+    - { id: categories.create, method: POST, path: "/categories", body_params: [name, slug, description, parent, color, image], description: Create an event category }
+    - { id: categories.update, method: PATCH, path: "/categories/{id}", path_params: [id], body_params: [name, slug, description, parent, color, image], description: Update an event category }
+    - { id: categories.delete, method: DELETE, path: "/categories/{id}", path_params: [id], description: Delete an event category }
+    - { id: tags.list, method: GET, path: "/tags", query_params: [page, per_page, search, hide_empty], description: List event tags }
+    - { id: tags.read, method: GET, path: "/tags/{id}", path_params: [id], description: Retrieve an event tag }
+    - { id: tags.create, method: POST, path: "/tags", body_params: [name, slug, description, parent, color, image], description: Create an event tag }
+    - { id: tags.update, method: PATCH, path: "/tags/{id}", path_params: [id], body_params: [name, slug, description, parent, color, image], description: Update an event tag }
+    - { id: tags.delete, method: DELETE, path: "/tags/{id}", path_params: [id], description: Delete an event tag }
+
