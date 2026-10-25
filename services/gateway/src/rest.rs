@@ -10621,6 +10621,7 @@ pub async fn start_connector_oauth(
         &scopes,
         &state_token,
         challenge.as_deref(),
+        &oauth.authorize_params,
     );
     let binding = crate::oauth_connect::PendingBinding::capture(&state.service, &connection, &op, remote)?;
 
@@ -10637,6 +10638,7 @@ pub async fn start_connector_oauth(
             scopes,
             created_ms: now_ms(),
             binding,
+            token_auth: oauth.token_auth,
         },
         now_ms(),
     );

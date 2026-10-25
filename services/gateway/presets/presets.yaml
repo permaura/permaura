@@ -14,7 +14,10 @@
 # oauth: present when the connector also supports OAuth (PKCE / BYO app / Managed). Whether the
 #   hosted *Managed* layer is offered is a separate web-side flag (managed_oauth_provider), so a
 #   connector can advertise OAuth while we are still standing up its hosted app. pkce: true means the
-#   zero-knowledge "Permaura app" layer is possible (public client, no secret).
+#   zero-knowledge "Permaura app" layer is possible (public client, no secret). token_auth: body
+#   (default) sends the client id and secret as form fields; basic sends them as an HTTP Basic header,
+#   which Reddit requires. authorize_params: extra parameters on every authorization URL (Reddit's
+#   duration=permanent, without which it issues no refresh token).
 # Paths are quoted because `{id}` braces are flow-mapping syntax in YAML.
 # The secret is referenced by id and injected server-side, never present here.
 
@@ -696,3 +699,91 @@
     - { id: tags.update, method: PATCH, path: "/tags/{id}", path_params: [id], body_params: [name, slug, description, parent, color, image], description: Update an event tag }
     - { id: tags.delete, method: DELETE, path: "/tags/{id}", path_params: [id], description: Delete an event tag }
 
+- id: reddit
+  name: Reddit
+  vertical: comms
+  description: "Read subreddits, posts, comments, users and your inbox as your own Reddit account, with posting, commenting and messaging held behind an approval."
+  base_url: "https://oauth.reddit.com"
+  logo: reddit
+  brand_color: "#FF4500"
+  auth: { scheme: bearer }
+  # Reddit rate-limits generic User-Agents to a crawl and asks every client to name itself.
+  static_headers: { User-Agent: "permaura-gateway:reddit-connector:1.0 (+https://permaura.com)" }
+  # Every Reddit write endpoint reads a form body, never JSON.
+  body_style: form
+  oauth:
+    authorize_url: "https://www.reddit.com/api/v1/authorize"
+    token_url: "https://www.reddit.com/api/v1/access_token"
+    scopes: [identity, read, mysubreddits, history, submit, edit, privatemessages]
+    pkce: false
+    token_auth: basic
+    authorize_params: { duration: permanent }
+  capabilities:
+    - { id: me.read, method: GET, path: "/api/v1/me", description: Read the account this connection acts as }
+    - { id: subreddits.about, method: GET, path: "/r/{subreddit}/about", path_params: [subreddit], query_params: [raw_json], description: Read a subreddit's description, rules summary and subscriber count }
+    - { id: subreddits.rules, method: GET, path: "/r/{subreddit}/about/rules", path_params: [subreddit], query_params: [raw_json], description: Read a subreddit's rules }
+    - { id: subreddits.mine, method: GET, path: "/subreddits/mine/subscriber", query_params: [limit, after, before, raw_json], description: List the subreddits the account subscribes to }
+    - { id: subreddits.search, method: GET, path: "/subreddits/search", query_params: [q, limit, after, sort, raw_json], description: Search subreddits by name and description }
+    - { id: posts.hot, method: GET, path: "/r/{subreddit}/hot", path_params: [subreddit], query_params: [limit, after, before, raw_json], description: List a subreddit's hot posts }
+    - { id: posts.new, method: GET, path: "/r/{subreddit}/new", path_params: [subreddit], query_params: [limit, after, before, raw_json], description: List a subreddit's newest posts }
+    - { id: posts.top, method: GET, path: "/r/{subreddit}/top", path_params: [subreddit], query_params: [t, limit, after, before, raw_json], description: "List a subreddit's top posts over a period (t: hour, day, week, month, year, all)" }
+    - { id: posts.search, method: GET, path: "/r/{subreddit}/search", path_params: [subreddit], query_params: [q, restrict_sr, sort, t, limit, after, type, raw_json], description: Search posts within a subreddit }
+    - { id: search, method: GET, path: "/search", query_params: [q, sort, t, limit, after, type, raw_json], description: Search posts across Reddit }
+    - { id: comments.list, method: GET, path: "/comments/{article}", path_params: [article], query_params: [sort, limit, depth, comment, context, raw_json], description: Read a post with its comment tree }
+    - { id: users.about, method: GET, path: "/user/{username}/about", path_params: [username], query_params: [raw_json], description: Read a user's public profile }
+    - { id: users.posts, method: GET, path: "/user/{username}/submitted", path_params: [username], query_params: [sort, t, limit, after, raw_json], description: List a user's posts }
+    - { id: users.comments, method: GET, path: "/user/{username}/comments", path_params: [username], query_params: [sort, t, limit, after, raw_json], description: List a user's comments }
+    - { id: things.info, method: GET, path: "/api/info", query_params: [id, url, sr_name, raw_json], description: Look up posts, comments or subreddits by fullname or URL }
+    - { id: messages.inbox, method: GET, path: "/message/inbox", query_params: [limit, after, mark, raw_json], description: Read the account's inbox, including private messages }
+    - { id: posts.create, method: POST, path: "/api/submit", body_params: [sr, kind, title, text, url, nsfw, spoiler, flair_id, flair_text, sendreplies, api_type], action: create, risk: high, requires_approval: true, description: Submit a post to a subreddit as the account }
+    - { id: comments.create, method: POST, path: "/api/comment", body_params: [thing_id, text, api_type], action: create, risk: high, requires_approval: true, description: Reply to a post, comment or message as the account }
+    - { id: things.edit, method: POST, path: "/api/editusertext", body_params: [thing_id, text, api_type], action: update, risk: high, requires_approval: true, description: Edit the text of one of the account's own posts or comments }
+    - { id: things.delete, method: POST, path: "/api/del", body_params: [id], action: delete, risk: critical, requires_approval: true, description: Delete one of the account's own posts or comments }
+    - { id: messages.send, method: POST, path: "/api/compose", body_params: [to, subject, text, api_type], action: create, risk: high, requires_approval: true, description: Send a private message as the account }
+
+- id: reddit-ads
+  name: Reddit Ads
+  vertical: marketing
+  description: "Read ad accounts, campaigns, ad groups, ads and performance reports, with every change that can start or alter spend held behind an approval."
+  base_url: "https://ads-api.reddit.com/api/v3"
+  logo: reddit
+  brand_color: "#FF4500"
+  auth: { scheme: bearer }
+  static_headers: { User-Agent: "permaura-gateway:reddit-ads-connector:1.0 (+https://permaura.com)" }
+  redact_fields: [email, phone, firstname, lastname]
+  oauth:
+    authorize_url: "https://www.reddit.com/api/v1/authorize"
+    token_url: "https://www.reddit.com/api/v1/access_token"
+    scopes: [adsread, adsedit]
+    pkce: false
+    token_auth: basic
+    authorize_params: { duration: permanent }
+  capabilities:
+    - { id: me.read, method: GET, path: "/me", description: Read the advertiser account this connection acts as }
+    - { id: businesses.list, method: GET, path: "/me/businesses", query_params: [ad_account_id, role, page.size, page.token], description: List the businesses the account belongs to }
+    - { id: businesses.read, method: GET, path: "/businesses/{business_id}", path_params: [business_id], description: Read a business }
+    - { id: ad_accounts.list, method: GET, path: "/businesses/{business_id}/ad_accounts", path_params: [business_id], query_params: [ids, page.size, page.token], description: List a business's ad accounts }
+    - { id: ad_accounts.read, method: GET, path: "/ad_accounts/{ad_account_id}", path_params: [ad_account_id], description: Read an ad account }
+    - { id: profiles.list, method: GET, path: "/ad_accounts/{ad_account_id}/profiles", path_params: [ad_account_id], query_params: [page.size, page.token], description: List the Reddit profiles an ad account can post from }
+    - { id: campaigns.list, method: GET, path: "/ad_accounts/{ad_account_id}/campaigns", path_params: [ad_account_id], query_params: [id, page.size, page.token], description: List an ad account's campaigns }
+    - { id: campaigns.read, method: GET, path: "/campaigns/{campaign_id}", path_params: [campaign_id], description: Read a campaign }
+    - { id: ad_groups.list, method: GET, path: "/ad_accounts/{ad_account_id}/ad_groups", path_params: [ad_account_id], query_params: [page.size, page.token], description: List an ad account's ad groups }
+    - { id: ad_groups.read, method: GET, path: "/ad_groups/{ad_group_id}", path_params: [ad_group_id], description: Read an ad group with its budget, bid and targeting }
+    - { id: ads.list, method: GET, path: "/ad_accounts/{ad_account_id}/ads", path_params: [ad_account_id], query_params: [id, ad_group_id, campaign_id, configured_status, effective_status, page.size, page.token], description: List an ad account's ads }
+    - { id: ads.read, method: GET, path: "/ads/{ad_id}", path_params: [ad_id], description: Read an ad }
+    - { id: posts.list, method: GET, path: "/profiles/{profile_id}/posts", path_params: [profile_id], query_params: [type, source, page.size, page.token], description: List the promotable posts on a profile }
+    - { id: pixels.list, method: GET, path: "/ad_accounts/{ad_account_id}/pixels", path_params: [ad_account_id], query_params: [page.size, page.token], description: List an ad account's pixels }
+    - { id: reports.run, method: POST, path: "/ad_accounts/{ad_account_id}/reports", path_params: [ad_account_id], query_params: [page.size, page.token], body_params: [data], action: read, risk: medium, description: Run a performance report over campaigns, ad groups or ads (a read sent as a POST) }
+    - { id: history.read, method: POST, path: "/ad_accounts/{ad_account_id}/history", path_params: [ad_account_id], query_params: [page.size, page.token], body_params: [data], action: read, risk: medium, description: Read the change history of an ad account (a read sent as a POST) }
+    - { id: forecast.estimate, method: POST, path: "/ad_accounts/{ad_account_id}/forecasting/audience_and_delivery_estimates", path_params: [ad_account_id], body_params: [data], action: read, risk: medium, description: Estimate audience size and delivery for a targeting and budget (a read sent as a POST) }
+    - { id: targeting.communities.search, method: GET, path: "/targeting/communities/search", query_params: [query, page.size, page.token], description: Search communities that can be targeted }
+    - { id: targeting.communities.read, method: GET, path: "/targeting/communities", query_params: [names, page.size, page.token], description: Read targetable communities by name }
+    - { id: targeting.keywords.suggest, method: POST, path: "/targeting/keyword_suggestions", body_params: [data], action: read, risk: medium, description: Suggest keywords to target (a read sent as a POST) }
+    - { id: targeting.geolocations.list, method: GET, path: "/targeting/geolocations", query_params: [query, page.size, page.token], description: List targetable locations }
+    - { id: campaigns.create, method: POST, path: "/ad_accounts/{ad_account_id}/campaigns", path_params: [ad_account_id], body_params: [data], action: create, risk: high, requires_approval: true, description: Create a campaign }
+    - { id: campaigns.update, method: PATCH, path: "/campaigns/{campaign_id}", path_params: [campaign_id], body_params: [data], action: update, risk: high, requires_approval: true, description: "Update a campaign, including pausing or activating it" }
+    - { id: ad_groups.create, method: POST, path: "/ad_accounts/{ad_account_id}/ad_groups", path_params: [ad_account_id], body_params: [data], action: create, risk: high, requires_approval: true, description: Create an ad group with its budget, bid and targeting }
+    - { id: ad_groups.update, method: PATCH, path: "/ad_groups/{ad_group_id}", path_params: [ad_group_id], body_params: [data], action: update, risk: high, requires_approval: true, description: "Update an ad group, including its budget, bid, targeting and status" }
+    - { id: ads.create, method: POST, path: "/ad_accounts/{ad_account_id}/ads", path_params: [ad_account_id], body_params: [data], action: create, risk: high, requires_approval: true, description: Create an ad from a post }
+    - { id: ads.update, method: PATCH, path: "/ads/{ad_id}", path_params: [ad_id], body_params: [data], action: update, risk: high, requires_approval: true, description: "Update an ad, including pausing or activating it" }
+    - { id: posts.create, method: POST, path: "/profiles/{profile_id}/posts", path_params: [profile_id], body_params: [data], action: create, risk: high, requires_approval: true, description: Create a promotable post on a profile }

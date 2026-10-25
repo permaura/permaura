@@ -41,7 +41,7 @@ fn oauth_needles() -> Vec<&'static [u8]> {
 }
 
 fn credential(expires_at: i64) -> OAuthCredential {
-    OAuthCredential {
+    OAuthCredential { token_auth: Default::default(),
         layer: OAuthLayer::ByoApp,
         provider: "synthetic".into(),
         access_token: ACCESS.into(),
@@ -178,7 +178,7 @@ async fn an_invoke_through_an_expired_oauth_connection_and_a_code_exchange_leave
     }
     assert_eq!(w.hits(), 0, "an OAuth invoke left a copy of a token or the client secret in freed memory");
 
-    let pending = permaura_gateway::oauth_connect::PendingAuth {
+    let pending = permaura_gateway::oauth_connect::PendingAuth { token_auth: Default::default(),
         connection_id: connection.id.clone(),
         provider: "synthetic".into(),
         client_id: "synthetic-client".into(),

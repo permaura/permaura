@@ -25,9 +25,9 @@ use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::connectors::{HttpClient, HttpRequest};
+use crate::connectors::HttpClient;
 use crate::error::GatewayError;
-use crate::oauth_credential::{OAuthCredential, OAuthLayer};
+use crate::oauth_credential::{token_request, OAuthCredential, OAuthLayer, TokenAuth};
 use crate::store::{Session, Store};
 
 /// How long an operator has to complete the browser dance before the pending authorization is swept.
@@ -98,6 +98,8 @@ pub struct PendingAuth {
     pub created_ms: i64,
     /// What the dance was started against, checked again before its credential is written.
     pub binding: PendingBinding,
+    /// How the provider's token endpoint takes the client credentials, from the connector's manifest.
+    pub token_auth: TokenAuth,
 }
 
 impl std::fmt::Debug for PendingAuth {
@@ -112,6 +114,7 @@ impl std::fmt::Debug for PendingAuth {
             .field("scopes", &self.scopes)
             .field("created_ms", &self.created_ms)
             .field("binding", &self.binding)
+            .field("token_auth", &self.token_auth)
             .finish_non_exhaustive()
     }
 }
@@ -452,7 +455,8 @@ fn pct(s: &str) -> String {
 /// `access_type=offline` and `prompt=consent` are Google-specific but harmless elsewhere (unknown
 /// authorize params are ignored per RFC 6749 §3.1), and without them Google returns no refresh token
 /// on a re-authorization, the single most common reason a BYO setup appears to work and then dies an
-/// hour later.
+/// hour later. `extra` carries a connector's own equivalents, such as Reddit's `duration=permanent`,
+/// without which it too issues no refresh token.
 pub fn authorize_url(
     authorize_endpoint: &str,
     client_id: &str,
@@ -460,6 +464,7 @@ pub fn authorize_url(
     scopes: &[String],
     state: &str,
     code_challenge: Option<&str>,
+    extra: &BTreeMap<String, String>,
 ) -> String {
     let mut url = format!(
         "{}{}response_type=code&client_id={}&redirect_uri={}&state={}&access_type=offline&prompt=consent",
@@ -474,6 +479,9 @@ pub fn authorize_url(
     }
     if let Some(challenge) = code_challenge {
         url.push_str(&format!("&code_challenge={}&code_challenge_method=S256", pct(challenge)));
+    }
+    for (name, value) in extra {
+        url.push_str(&format!("&{}={}", pct(name), pct(value)));
     }
     url
 }
@@ -507,16 +515,17 @@ pub async fn exchange_code(
     form.insert("grant_type".to_string(), "authorization_code".to_string());
     form.insert("code".to_string(), code.to_string());
     form.insert("redirect_uri".to_string(), pending.redirect_uri.clone());
-    form.insert("client_id".to_string(), pending.client_id.clone());
-    form.insert("client_secret".to_string(), pending.client_secret.expose().to_string());
     if let Some(verifier) = &pending.code_verifier {
         form.insert("code_verifier".to_string(), verifier.expose().to_string());
     }
 
-    let req = HttpRequest::post(pending.token_url.clone())
-        .header("Accept", "application/json")
-        .form_body(form)
-        .credentialed();
+    let req = token_request(
+        &pending.token_url,
+        form,
+        Some(&pending.client_id),
+        Some(&pending.client_secret),
+        pending.token_auth,
+    );
     let resp = http
         .send_secret(req)
         .await
@@ -571,6 +580,7 @@ pub async fn exchange_code(
         token_url: pending.token_url.clone(),
         client_id: Some(pending.client_id.clone()),
         client_secret: Some(pending.client_secret.clone()),
+        token_auth: pending.token_auth,
     })
 }
 
@@ -597,6 +607,7 @@ mod tests {
             scopes: vec!["https://www.googleapis.com/auth/gmail.readonly".into()],
             created_ms: 1_000,
             binding: binding(&Arc::new(CredentialRevisions::default())),
+            token_auth: TokenAuth::Body,
         }
     }
 
@@ -701,6 +712,7 @@ mod tests {
             &["a/b".to_string(), "c".to_string()],
             "st ate",
             Some("chal"),
+            &BTreeMap::new(),
         );
         assert!(url.contains("response_type=code"));
         assert!(url.contains("client_id=cid"));
@@ -710,6 +722,35 @@ mod tests {
         assert!(url.contains("scope=a%2Fb%20c"), "got {url}");
         assert!(url.contains("state=st%20ate"));
         assert!(url.contains("code_challenge=chal&code_challenge_method=S256"));
+    }
+
+    #[test]
+    fn authorize_url_appends_a_connectors_own_params_after_the_standard_ones() {
+        // Reddit issues a refresh token only when the authorize request says duration=permanent.
+        let extra = BTreeMap::from([("duration".to_string(), "permanent".to_string()), ("odd one".to_string(), "a&b".to_string())]);
+        let url = authorize_url("https://www.reddit.com/api/v1/authorize", "cid", "http://127.0.0.1:7376/oauth/callback", &["identity".to_string()], "st", None, &extra);
+        assert!(url.ends_with("&scope=identity&duration=permanent&odd%20one=a%26b"), "got {url}");
+        assert!(!url.contains("code_challenge"));
+    }
+
+    #[tokio::test]
+    async fn basic_token_auth_exchanges_with_the_client_credentials_in_a_header() {
+        let http = MockHttpClient::default();
+        http.push_response(HttpResponse::json(
+            200,
+            serde_json::json!({ "access_token": "at", "refresh_token": "rt", "expires_in": 86400, "scope": "identity read" }),
+        ));
+        let mut p = pending();
+        p.token_auth = TokenAuth::Basic;
+        p.code_verifier = None;
+        let cred = exchange_code(&http, &p, "the-code", 5_000).await.unwrap();
+        assert_eq!(cred.token_auth, TokenAuth::Basic, "the sealed bundle refreshes the way it was exchanged");
+        let sent = http.last_request().unwrap();
+        assert_eq!(sent.headers.get("Authorization").map(String::as_str), Some("Basic Y2lkOmNzZWNyZXQ="));
+        let form = sent.form.clone().unwrap_or_default();
+        assert!(!form.contains_key("client_id") && !form.contains_key("client_secret"), "no client credential in the form: {form:?}");
+        assert_eq!(form.get("code").map(String::as_str), Some("the-code"));
+        assert_eq!(form.get("grant_type").map(String::as_str), Some("authorization_code"));
     }
 
     #[test]
@@ -733,6 +774,7 @@ mod tests {
             token_url: "https://t".into(),
             client_id: Some("cid".into()),
             client_secret: Some("sec".into()),
+            token_auth: TokenAuth::Basic,
         };
         let json = to_sealed_json(&cred).unwrap();
         assert_eq!(from_sealed_bytes(json.as_bytes()).unwrap(), cred);

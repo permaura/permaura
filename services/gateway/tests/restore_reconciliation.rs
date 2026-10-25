@@ -1916,7 +1916,7 @@ fn start_dance(state: &AppState, connection_id: &str) -> String {
     let token = permaura_gateway::oauth_connect::random_token();
     state.oauth_pending.insert(
         token.clone(),
-        permaura_gateway::oauth_connect::PendingAuth {
+        permaura_gateway::oauth_connect::PendingAuth { token_auth: Default::default(),
             connection_id: connection_id.into(),
             provider: connection.connector.clone(),
             client_id: "synthetic-client".into(),
@@ -1977,7 +1977,7 @@ async fn a_dance_outstanding_across_a_reconciliation_removal_and_reimport_is_ref
 
 /// A same-app OAuth bundle sealed for `connector`.
 fn sealed_oauth_bundle(connector: &str, access: &str) -> permaura_core::SealedSecret {
-    let cred = permaura_gateway::oauth_credential::OAuthCredential {
+    let cred = permaura_gateway::oauth_credential::OAuthCredential { token_auth: Default::default(),
         layer: permaura_gateway::oauth_credential::OAuthLayer::ByoApp,
         provider: connector.into(),
         access_token: access.into(),

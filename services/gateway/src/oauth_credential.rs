@@ -29,6 +29,21 @@ pub enum OAuthLayer {
     ByoApp,
 }
 
+/// How the client id and secret reach the provider's token endpoint. RFC 6749 §2.3.1 makes HTTP Basic
+/// the method every provider must accept and form fields an option, but in practice each provider takes
+/// one and refuses the other: Google, GitHub, Slack and Dropbox want the form, Reddit answers 401 to
+/// anything but the Basic header. Recorded on the credential so a refresh years later sends them the way
+/// the exchange did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TokenAuth {
+    /// `client_id` and `client_secret` as form fields in the request body.
+    #[default]
+    Body,
+    /// An `Authorization: Basic` header over `client_id:client_secret`, nothing in the body.
+    Basic,
+}
+
 /// A connection's OAuth credential, stored sealed (the same vault path as an API key). The access
 /// token is what gets injected upstream; the rest is what the gateway needs to keep it fresh.
 ///
@@ -62,6 +77,9 @@ pub struct OAuthCredential {
     /// The OAuth client secret (Layer 3 confidential app). `None` for PKCE (public client) / Managed.
     #[serde(default, deserialize_with = "permaura_core::secret::unescaped::option")]
     pub client_secret: Option<SecretString>,
+    /// How the client credentials are presented at `token_url`.
+    #[serde(default)]
+    pub token_auth: TokenAuth,
 }
 
 impl std::fmt::Debug for OAuthCredential {
@@ -75,6 +93,7 @@ impl std::fmt::Debug for OAuthCredential {
             .field("client_id", &self.client_id)
             .field("refresh_token", &self.refresh_token.is_some())
             .field("client_secret", &self.client_secret.is_some())
+            .field("token_auth", &self.token_auth)
             .finish_non_exhaustive()
     }
 }
@@ -91,6 +110,55 @@ impl OAuthCredential {
     pub fn is_locally_refreshable(&self) -> bool {
         self.layer != OAuthLayer::Managed && self.refresh_token.is_some()
     }
+}
+
+/// A request to a token endpoint: `form` as the `application/x-www-form-urlencoded` body (RFC 6749 §6:
+/// Google, Xero, Slack, Dropbox and GitHub all reject JSON there) with the client credentials added
+/// the way `token_auth` says. The Basic header's halves are form-encoded first as §2.3.1 requires,
+/// which leaves the ids and secrets providers actually issue unchanged.
+pub fn token_request(
+    token_url: &str,
+    mut form: std::collections::BTreeMap<String, String>,
+    client_id: Option<&str>,
+    client_secret: Option<&SecretString>,
+    token_auth: TokenAuth,
+) -> HttpRequest {
+    let req = HttpRequest::post(token_url.to_string()).header("Accept", "application/json");
+    let req = match token_auth {
+        TokenAuth::Body => {
+            if let Some(cid) = client_id {
+                form.insert("client_id".to_string(), cid.to_string());
+            }
+            if let Some(sec) = client_secret {
+                form.insert("client_secret".to_string(), sec.expose().to_string());
+            }
+            req
+        }
+        TokenAuth::Basic => {
+            use base64::Engine;
+            let mut pair = zeroize::Zeroizing::new(String::new());
+            pair.push_str(&form_encode(client_id.unwrap_or_default()));
+            pair.push(':');
+            pair.push_str(&form_encode(client_secret.map(SecretString::expose).unwrap_or_default()));
+            let encoded = zeroize::Zeroizing::new(base64::engine::general_purpose::STANDARD.encode(pair.as_bytes()));
+            req.header("Authorization", format!("Basic {}", encoded.as_str()))
+        }
+    };
+    req.form_body(form).credentialed()
+}
+
+/// `application/x-www-form-urlencoded` encoding of one value, as RFC 6749 §2.3.1 asks for the halves
+/// of the Basic header.
+fn form_encode(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for b in s.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'*' => out.push(b as char),
+            b' ' => out.push('+'),
+            _ => out.push_str(&format!("%{b:02X}")),
+        }
+    }
+    out
 }
 
 /// What the provider's token endpoint returns on a refresh.
@@ -123,21 +191,16 @@ pub async fn ensure_fresh(
     }
     let refresh_token = cred.refresh_token.as_ref().expect("is_locally_refreshable checked Some");
 
-    // RFC 6749 §6: the token endpoint takes an `application/x-www-form-urlencoded` body. Google,
-    // Xero, Slack, Dropbox and GitHub all reject a JSON one, so this must be form-encoded.
     let mut params = std::collections::BTreeMap::new();
     params.insert("grant_type".to_string(), "refresh_token".to_string());
     params.insert("refresh_token".to_string(), refresh_token.expose().to_string());
-    if let Some(cid) = &cred.client_id {
-        params.insert("client_id".to_string(), cid.clone());
-    }
-    if let Some(sec) = &cred.client_secret {
-        params.insert("client_secret".to_string(), sec.expose().to_string());
-    }
-    let req = HttpRequest::post(cred.token_url.clone())
-        .header("Accept", "application/json")
-        .form_body(params)
-        .credentialed();
+    let req = token_request(
+        &cred.token_url,
+        params,
+        cred.client_id.as_deref(),
+        cred.client_secret.as_ref(),
+        cred.token_auth,
+    );
 
     let resp = http
         .send_secret(req)
@@ -189,7 +252,49 @@ mod tests {
             token_url: "https://github.com/login/oauth/access_token".into(),
             client_id: Some("cid".into()),
             client_secret: Some("csec".into()),
+            token_auth: TokenAuth::Body,
         }
+    }
+
+    #[tokio::test]
+    async fn body_token_auth_puts_the_client_credentials_in_the_form() {
+        let http = MockHttpClient::new();
+        http.push_response(HttpResponse::json(200, serde_json::json!({ "access_token": "new", "expires_in": 60 })));
+        let c = cred(1, Some("rt"), OAuthLayer::ByoApp);
+        ensure_fresh(&c, &http, 1_000_000, 60_000).await.unwrap();
+        let sent = http.last_request().unwrap();
+        assert!(sent.headers.get("Authorization").is_none());
+        let form = sent.form.clone().unwrap_or_default();
+        assert_eq!(form.get("client_id").map(String::as_str), Some("cid"));
+        assert_eq!(form.get("client_secret").map(String::as_str), Some("csec"));
+        assert_eq!(form.get("grant_type").map(String::as_str), Some("refresh_token"));
+    }
+
+    #[tokio::test]
+    async fn basic_token_auth_sends_the_client_credentials_as_a_header_and_keeps_them_out_of_the_form() {
+        // Reddit's token endpoint answers 401 to client credentials in the form, so a credential recorded
+        // as Basic must refresh the way its exchange authenticated.
+        let http = MockHttpClient::new();
+        http.push_response(HttpResponse::json(200, serde_json::json!({ "access_token": "new", "expires_in": 86400 })));
+        let mut c = cred(1, Some("rt"), OAuthLayer::ByoApp);
+        c.token_auth = TokenAuth::Basic;
+        let (tok, updated) = ensure_fresh(&c, &http, 1_000_000, 60_000).await.unwrap();
+        assert_eq!(tok, "new");
+        assert_eq!(updated.unwrap().token_auth, TokenAuth::Basic, "the refreshed bundle keeps the method");
+        let sent = http.last_request().unwrap();
+        // base64("cid:csec")
+        assert_eq!(sent.headers.get("Authorization").map(String::as_str), Some("Basic Y2lkOmNzZWM="));
+        let form = sent.form.clone().unwrap_or_default();
+        assert!(!form.contains_key("client_id") && !form.contains_key("client_secret"), "{form:?}");
+        assert_eq!(form.get("refresh_token").map(String::as_str), Some("rt"));
+    }
+
+    #[test]
+    fn an_older_bundle_without_a_token_auth_reads_as_body() {
+        // A bundle sealed before the field existed, read the way the invoke path reads one.
+        let json = br#"{"kind":"permaura.oauth.v1","layer":"byo_app","provider":"github","access_token":"a","refresh_token":"r","expires_at":0,"scopes":[],"token_url":"https://t.example/token","client_id":"c","client_secret":"s"}"#;
+        let c = crate::oauth_connect::from_sealed_bytes(json).unwrap();
+        assert_eq!(c.token_auth, TokenAuth::Body);
     }
 
     #[tokio::test]

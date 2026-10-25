@@ -39,7 +39,7 @@ async fn token_endpoint(hits: Arc<AtomicUsize>) -> String {
 }
 
 fn expired(token_url: String) -> OAuthCredential {
-    OAuthCredential {
+    OAuthCredential { token_auth: Default::default(),
         layer: OAuthLayer::ByoApp,
         provider: "synthetic".into(),
         access_token: "synthetic-expired".into(),

@@ -40,6 +40,18 @@ pub struct OAuthPreset {
     /// True if the provider supports PKCE public clients (enables the zero-knowledge "Permaura app" layer).
     #[serde(default)]
     pub pkce: bool,
+    /// How the token endpoint takes the client id and secret: form fields (the default, what Google,
+    /// GitHub, Slack and Dropbox accept) or an HTTP Basic header (Reddit refuses the form).
+    #[serde(default, skip_serializing_if = "is_body_token_auth")]
+    pub token_auth: crate::oauth_credential::TokenAuth,
+    /// Provider-specific parameters added to every authorization URL, such as Reddit's
+    /// `duration=permanent`, without which it issues no refresh token.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub authorize_params: BTreeMap<String, String>,
+}
+
+fn is_body_token_auth(t: &crate::oauth_credential::TokenAuth) -> bool {
+    *t == crate::oauth_credential::TokenAuth::Body
 }
 
 /// Marks a preset as a curated slice of a WordPress site's REST API. The manifest cannot know the
@@ -468,14 +480,64 @@ mod tests {
     #[test]
     fn bundled_presets_parse_and_cover_the_catalog() {
         let cat = catalog();
-        assert_eq!(cat.list().len(), 29, "the bundled catalog");
+        assert_eq!(cat.list().len(), 31, "the bundled catalog");
         for id in [
             "stripe", "github", "slack", "gmail", "microsoft-graph", "vercel", "cloudflare",
             "linear", "hubspot", "openai", "braintree", "discord", "docusign", "dropbox",
             "elevenlabs", "fal", "google-analytics", "google-calendar", "google-drive", "google-meet",
             "google-veo", "heygen", "higgsfield", "mailchimp", "openrouter", "paddle", "square", "xero", "events-manager",
+            "reddit", "reddit-ads",
         ] {
             assert!(cat.get(id).is_some(), "missing preset {id}");
+        }
+    }
+
+    #[test]
+    fn reddit_authenticates_its_token_endpoint_with_basic_and_asks_for_a_permanent_grant() {
+        use crate::oauth_credential::TokenAuth;
+        for id in ["reddit", "reddit-ads"] {
+            let oauth = catalog().get(id).unwrap().oauth.clone().unwrap();
+            assert_eq!(oauth.token_auth, TokenAuth::Basic, "{id}: Reddit answers 401 to client credentials in the form");
+            assert_eq!(oauth.authorize_params.get("duration").map(String::as_str), Some("permanent"), "{id}: no refresh token without it");
+            assert_eq!(oauth.token_url, "https://www.reddit.com/api/v1/access_token");
+            assert!(!oauth.pkce);
+        }
+        // Every other connector keeps the form, so this change is invisible to them.
+        for p in catalog().list() {
+            if !p.id.starts_with("reddit") {
+                if let Some(o) = &p.oauth {
+                    assert_eq!(o.token_auth, TokenAuth::Body, "{}", p.id);
+                    assert!(o.authorize_params.is_empty(), "{}", p.id);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn reddit_reads_are_on_and_everything_that_posts_or_spends_is_off_and_gated() {
+        let reddit = catalog().get("reddit").unwrap().instantiate("r", "sec_r");
+        let cap = |s: &str| reddit.capabilities.iter().find(|c| c.id == format!("r.{s}")).unwrap();
+        let off = |s: &str| reddit.disabled_capabilities.contains(&format!("r.{s}"));
+        for read in ["me.read", "subreddits.about", "posts.hot", "posts.search", "comments.list", "users.about", "messages.inbox"] {
+            assert!(!off(read) && !cap(read).requires_approval, "{read} is a read");
+        }
+        for write in ["posts.create", "comments.create", "messages.send", "things.delete"] {
+            assert!(off(write) && cap(write).requires_approval, "{write} acts as the account holder");
+        }
+        // Reddit's write endpoints read form bodies, and every call needs the descriptive User-Agent it rate-limits without.
+        let req = crate::connectors::build_request(cap("posts.create"), &serde_json::json!({ "sr": "test", "kind": "self", "title": "t", "text": "x", "api_type": "json" }), b"tok").unwrap();
+        assert_eq!(req.headers.get("Content-Type").map(String::as_str), Some("application/x-www-form-urlencoded"));
+        assert!(req.headers.get("User-Agent").is_some_and(|ua| ua.contains("permaura")));
+        assert_eq!(req.headers.get("Authorization").map(String::as_str), Some("Bearer tok"));
+
+        let ads = catalog().get("reddit-ads").unwrap().instantiate("a", "sec_a");
+        let acap = |s: &str| ads.capabilities.iter().find(|c| c.id == format!("a.{s}")).unwrap();
+        let aoff = |s: &str| ads.disabled_capabilities.contains(&format!("a.{s}"));
+        for read in ["me.read", "campaigns.list", "ads.list", "reports.run", "forecast.estimate", "targeting.communities.search"] {
+            assert!(!aoff(read) && !acap(read).requires_approval, "{read} is a read");
+        }
+        for spend in ["campaigns.create", "campaigns.update", "ad_groups.create", "ad_groups.update", "ads.create", "ads.update", "posts.create"] {
+            assert!(aoff(spend) && acap(spend).requires_approval, "{spend} can start or change spend");
         }
     }
 
@@ -549,7 +611,9 @@ mod tests {
         assert_eq!(req.headers.get("Content-Type").unwrap(), "application/x-www-form-urlencoded");
         assert_eq!(req.url, "https://api.stripe.com/v1/refunds");
 
-        for preset in catalog().list().iter().filter(|p| p.id != "stripe") {
+        // Reddit's write endpoints read form bodies too; the test above pins what it sends.
+        assert_eq!(catalog().get("reddit").unwrap().body_style, BodyStyle::Form);
+        for preset in catalog().list().iter().filter(|p| p.id != "stripe" && p.id != "reddit") {
             assert_eq!(preset.body_style, BodyStyle::Json, "{}", preset.id);
             assert!(preset.capabilities.iter().all(|c| c.body_style.is_none()), "{}", preset.id);
         }

@@ -1,6 +1,6 @@
 {
   "name": "permaura",
-  "version": "1.4.4",
+  "version": "1.4.5",
   "description": "Run the Permaura gateway with one command. Give your AI agents permission, not keys. `npm i -g permaura` then `permaura start --pair <code>` installs the gateway, starts it, and connects it to your permaura.com account.",
   "license": "Apache-2.0",
   "type": "module",

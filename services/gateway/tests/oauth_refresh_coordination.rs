@@ -85,7 +85,7 @@ async fn the_byo_callback_wins_over_a_stale_refresh() {
     let operator = s.store().session_by_token(seed::DEMO_TOKEN).unwrap().unwrap();
     state.oauth_pending.insert(
         "synthetic-state".into(),
-        PendingAuth {
+        PendingAuth { token_auth: Default::default(),
             connection_id: "github_acme".into(),
             provider: "synthetic".into(),
             client_id: "synthetic-client".into(),
