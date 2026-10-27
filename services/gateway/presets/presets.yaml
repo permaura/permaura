@@ -787,3 +787,133 @@
     - { id: ads.create, method: POST, path: "/ad_accounts/{ad_account_id}/ads", path_params: [ad_account_id], body_params: [data], action: create, risk: high, requires_approval: true, description: Create an ad from a post }
     - { id: ads.update, method: PATCH, path: "/ads/{ad_id}", path_params: [ad_id], body_params: [data], action: update, risk: high, requires_approval: true, description: "Update an ad, including pausing or activating it" }
     - { id: posts.create, method: POST, path: "/profiles/{profile_id}/posts", path_params: [profile_id], body_params: [data], action: create, risk: high, requires_approval: true, description: Create a promotable post on a profile }
+
+- id: google-ads
+  name: Google Ads
+  vertical: marketing
+  description: "Query campaigns, ad groups, ads, keywords, budgets and performance with GAQL, with every change that can start or alter spend held behind an approval."
+  base_url: "https://googleads.googleapis.com/v26"
+  logo: googleads
+  brand_color: "#4285F4"
+  auth: { scheme: bearer }
+  redact_fields: [email_address, inviter_user_email_address]
+  # Every call needs the developer token from the manager account's API Center, and a call made through a manager account names it in login-customer-id. Both are per connection, so each is asked for when the connection is made.
+  connection_headers:
+    - { name: developer-token, label: Developer token, required: true, description: "From the API Center of your Google Ads manager account. It identifies your API access; the account itself is authorized by the OAuth sign-in." }
+    - { name: login-customer-id, label: Login customer id, required: false, description: "The manager account id, digits only, when the signed-in user reaches the ad account through a manager account. Leave empty when the user owns the ad account directly." }
+  oauth:
+    authorize_url: https://accounts.google.com/o/oauth2/v2/auth
+    token_url: https://oauth2.googleapis.com/token
+    scopes: ["https://www.googleapis.com/auth/adwords"]
+    pkce: true
+  capabilities:
+    - { id: customers.accessible, method: GET, path: "/customers:listAccessibleCustomers", description: List the customer ids the signed-in user can reach directly }
+    - { id: search, method: POST, path: "/customers/{customer_id}/googleAds:search", path_params: [customer_id], body_params: [query, pageToken, validateOnly, searchSettings], action: read, risk: medium, description: "Run a GAQL query over campaigns, ad groups, ads, keywords, budgets, change history or metrics, one page at a time (a read sent as a POST)" }
+    - { id: search_stream, method: POST, path: "/customers/{customer_id}/googleAds:searchStream", path_params: [customer_id], body_params: [query, summaryRowSetting], action: read, risk: medium, description: "Run a GAQL query and return every matching row in one response (a read sent as a POST)" }
+    - { id: keyword_ideas.generate, method: POST, path: "/customers/{customer_id}:generateKeywordIdeas", path_params: [customer_id], body_params: [language, geoTargetConstants, keywordPlanNetwork, keywordSeed, urlSeed, keywordAndUrlSeed, siteSeed, includeAdultKeywords, keywordAnnotation, aggregateMetricOptions, historicalMetricsOptions, pageSize, pageToken], action: read, risk: medium, description: "Generate keyword ideas with search volume and competition from seed keywords or a URL (a read sent as a POST)" }
+    - { id: campaign_budgets.mutate, method: POST, path: "/customers/{customer_id}/campaignBudgets:mutate", path_params: [customer_id], body_params: [operations, partialFailure, validateOnly, responseContentType], action: update, risk: high, requires_approval: true, description: "Create, change or remove campaign budgets" }
+    - { id: campaigns.mutate, method: POST, path: "/customers/{customer_id}/campaigns:mutate", path_params: [customer_id], body_params: [operations, partialFailure, validateOnly, responseContentType], action: update, risk: high, requires_approval: true, description: "Create, change, pause, enable or remove campaigns" }
+    - { id: ad_groups.mutate, method: POST, path: "/customers/{customer_id}/adGroups:mutate", path_params: [customer_id], body_params: [operations, partialFailure, validateOnly, responseContentType], action: update, risk: high, requires_approval: true, description: "Create, change, pause, enable or remove ad groups, including their bids" }
+    - { id: ad_group_ads.mutate, method: POST, path: "/customers/{customer_id}/adGroupAds:mutate", path_params: [customer_id], body_params: [operations, partialFailure, validateOnly, responseContentType], action: update, risk: high, requires_approval: true, description: "Create, change, pause, enable or remove ads" }
+    - { id: ad_group_criteria.mutate, method: POST, path: "/customers/{customer_id}/adGroupCriteria:mutate", path_params: [customer_id], body_params: [operations, partialFailure, validateOnly, responseContentType], action: update, risk: high, requires_approval: true, description: "Create, change or remove keywords and other ad group targeting" }
+    - { id: campaign_criteria.mutate, method: POST, path: "/customers/{customer_id}/campaignCriteria:mutate", path_params: [customer_id], body_params: [operations, partialFailure, validateOnly, responseContentType], action: update, risk: high, requires_approval: true, description: "Create, change or remove campaign targeting such as locations, languages and negative keywords" }
+    - { id: mutate, method: POST, path: "/customers/{customer_id}/googleAds:mutate", path_params: [customer_id], body_params: [mutateOperations, partialFailure, validateOnly, responseContentType], action: update, risk: critical, requires_approval: true, description: "Apply a batch of operations across any resource types in one call" }
+
+- id: microsoft-ads
+  name: Microsoft Advertising
+  vertical: marketing
+  description: "Read the campaigns, ad groups, ads, keywords, budgets and conversion goals of one Microsoft Advertising account, with every change that can start or alter spend held behind an approval."
+  base_url: "https://campaign.api.bingads.microsoft.com/CampaignManagement/v13"
+  logo: microsoft
+  brand_color: "#0078D4"
+  auth: { scheme: bearer }
+  # The REST API names the developer token, the manager account and the ad account in headers on every call; all three are per connection.
+  connection_headers:
+    - { name: DeveloperToken, label: Developer token, required: true, description: "From Microsoft Advertising's developer settings. It identifies your API access; the accounts themselves are authorized by the Microsoft sign-in." }
+    - { name: CustomerId, label: Customer id, required: true, description: "The manager account (customer) id: the cid value in the Microsoft Advertising URL." }
+    - { name: CustomerAccountId, label: Account id, required: true, description: "The ad account id: the aid value in the Microsoft Advertising URL. Not the eight-character account number." }
+  oauth:
+    authorize_url: https://login.microsoftonline.com/common/oauth2/v2.0/authorize
+    token_url: https://login.microsoftonline.com/common/oauth2/v2.0/token
+    scopes: ["https://ads.microsoft.com/msads.manage", "offline_access"]
+    pkce: true
+  capabilities:
+    - { id: campaigns.list, method: POST, path: "/Campaigns/QueryByAccountId", body_params: [AccountId, CampaignType, ReturnAdditionalFields], action: read, risk: medium, description: "List an account's campaigns; CampaignType widens it beyond Search (a read sent as a POST)" }
+    - { id: campaigns.read, method: POST, path: "/Campaigns/QueryByIds", body_params: [AccountId, CampaignIds, CampaignType, ReturnAdditionalFields], action: read, risk: medium, description: "Read campaigns by id (a read sent as a POST)" }
+    - { id: ad_groups.list, method: POST, path: "/AdGroups/QueryByCampaignId", body_params: [CampaignId, ReturnAdditionalFields], action: read, risk: medium, description: "List a campaign's ad groups (a read sent as a POST)" }
+    - { id: ad_groups.read, method: POST, path: "/AdGroups/QueryByIds", body_params: [CampaignId, AdGroupIds, ReturnAdditionalFields], action: read, risk: medium, description: "Read ad groups by id (a read sent as a POST)" }
+    - { id: ads.list, method: POST, path: "/Ads/QueryByAdGroupId", body_params: [AdGroupId, AdTypes, ReturnAdditionalFields], action: read, risk: medium, description: "List an ad group's ads of the given types (a read sent as a POST)" }
+    - { id: ads.read, method: POST, path: "/Ads/QueryByIds", body_params: [AdGroupId, AdIds, AdTypes, ReturnAdditionalFields], action: read, risk: medium, description: "Read ads by id (a read sent as a POST)" }
+    - { id: keywords.list, method: POST, path: "/Keywords/QueryByAdGroupId", body_params: [AdGroupId, ReturnAdditionalFields], action: read, risk: medium, description: "List an ad group's keywords with their bids and match types (a read sent as a POST)" }
+    - { id: budgets.list, method: POST, path: "/Budgets/QueryByAccountId", body_params: [AccountId], action: read, risk: medium, description: "List an account's shared budgets (a read sent as a POST)" }
+    - { id: campaign_criteria.list, method: POST, path: "/CampaignCriterions/QueryByIds", body_params: [CampaignId, CampaignCriterionIds, CriterionType, ReturnAdditionalFields], action: read, risk: medium, description: "List a campaign's targeting criteria such as locations, ages and devices (a read sent as a POST)" }
+    - { id: ad_group_criteria.list, method: POST, path: "/AdGroupCriterions/QueryByIds", body_params: [AdGroupId, AdGroupCriterionIds, CriterionType, ReturnAdditionalFields], action: read, risk: medium, description: "List an ad group's targeting criteria (a read sent as a POST)" }
+    - { id: conversion_goals.list, method: POST, path: "/ConversionGoals/QueryByIds", body_params: [ConversionGoalIds, ConversionGoalTypes, ReturnAdditionalFields], action: read, risk: medium, description: "List the account's conversion goals (a read sent as a POST)" }
+    - { id: campaigns.create, method: POST, path: "/Campaigns", body_params: [AccountId, Campaigns], action: create, risk: high, requires_approval: true, description: "Create campaigns with their budgets and bid strategies" }
+    - { id: campaigns.update, method: PUT, path: "/Campaigns", body_params: [AccountId, Campaigns], action: update, risk: high, requires_approval: true, description: "Update campaigns, including pausing or activating them and changing budgets" }
+    - { id: ad_groups.create, method: POST, path: "/AdGroups", body_params: [CampaignId, AdGroups], action: create, risk: high, requires_approval: true, description: "Create ad groups with their bids" }
+    - { id: ad_groups.update, method: PUT, path: "/AdGroups", body_params: [CampaignId, AdGroups], action: update, risk: high, requires_approval: true, description: "Update ad groups, including pausing or activating them and changing bids" }
+    - { id: ads.create, method: POST, path: "/Ads", body_params: [AdGroupId, Ads], action: create, risk: high, requires_approval: true, description: "Create ads in an ad group" }
+    - { id: ads.update, method: PUT, path: "/Ads", body_params: [AdGroupId, Ads], action: update, risk: high, requires_approval: true, description: "Update ads, including pausing or activating them" }
+    - { id: keywords.create, method: POST, path: "/Keywords", body_params: [AdGroupId, Keywords], action: create, risk: high, requires_approval: true, description: "Add keywords with their bids and match types" }
+    - { id: keywords.update, method: PUT, path: "/Keywords", body_params: [AdGroupId, Keywords], action: update, risk: high, requires_approval: true, description: "Update keywords, including their bids and status" }
+    - { id: budgets.create, method: POST, path: "/Budgets", body_params: [Budgets], action: create, risk: high, requires_approval: true, description: "Create shared budgets" }
+    - { id: budgets.update, method: PUT, path: "/Budgets", body_params: [Budgets], action: update, risk: high, requires_approval: true, description: "Change shared budgets" }
+
+- id: microsoft-ads-reporting
+  name: Microsoft Advertising Reporting
+  vertical: marketing
+  description: "Request and poll performance reports for a Microsoft Advertising account. The Reporting API lives on its own host, so it is a second connection beside Microsoft Advertising."
+  base_url: "https://reporting.api.bingads.microsoft.com/Reporting/v13"
+  logo: microsoft
+  brand_color: "#0078D4"
+  auth: { scheme: bearer }
+  connection_headers:
+    - { name: DeveloperToken, label: Developer token, required: true, description: "From Microsoft Advertising's developer settings. It identifies your API access; the accounts themselves are authorized by the Microsoft sign-in." }
+    - { name: CustomerId, label: Customer id, required: true, description: "The manager account (customer) id: the cid value in the Microsoft Advertising URL." }
+    - { name: CustomerAccountId, label: Account id, required: true, description: "The ad account id: the aid value in the Microsoft Advertising URL. Not the eight-character account number." }
+  oauth:
+    authorize_url: https://login.microsoftonline.com/common/oauth2/v2.0/authorize
+    token_url: https://login.microsoftonline.com/common/oauth2/v2.0/token
+    scopes: ["https://ads.microsoft.com/msads.manage", "offline_access"]
+    pkce: true
+  capabilities:
+    - { id: reports.submit, method: POST, path: "/GenerateReport/Submit", body_params: [ReportRequest], action: read, risk: medium, description: "Request a performance report such as CampaignPerformanceReportRequest; the answer is a report request id (a read sent as a POST)" }
+    - { id: reports.poll, method: POST, path: "/GenerateReport/Poll", body_params: [ReportRequestId], action: read, risk: medium, description: "Poll a requested report; when its status is Success the answer carries the download URL (a read sent as a POST)" }
+
+- id: meta-ads
+  name: Meta Marketing API
+  vertical: marketing
+  description: "Read ad accounts, campaigns, ad sets, ads, creatives, audiences and insights across Facebook and Instagram, with every change that can start or alter spend held behind an approval."
+  base_url: "https://graph.facebook.com/v26.0"
+  logo: meta
+  brand_color: "#0866FF"
+  auth: { scheme: bearer }
+  redact_fields: [email, phone]
+  oauth:
+    authorize_url: "https://www.facebook.com/v26.0/dialog/oauth"
+    token_url: "https://graph.facebook.com/v26.0/oauth/access_token"
+    scopes: [ads_read, ads_management]
+    pkce: false
+    # Meta issues no refresh token: the code's short-lived token is exchanged for a sixty-day one, and the gateway renews that by exchanging it again before it expires.
+    refresh_grant: exchange_token
+  capabilities:
+    - { id: me.read, method: GET, path: "/me", query_params: [fields], description: Read the user the connection acts as }
+    - { id: ad_accounts.list, method: GET, path: "/me/adaccounts", query_params: [fields, limit, after, before], description: "List the ad accounts the user can reach; ask for fields such as name, account_status, currency and amount_spent" }
+    - { id: ad_accounts.read, method: GET, path: "/act_{ad_account_id}", path_params: [ad_account_id], query_params: [fields], description: Read an ad account }
+    - { id: campaigns.list, method: GET, path: "/act_{ad_account_id}/campaigns", path_params: [ad_account_id], query_params: [fields, effective_status, filtering, date_preset, time_range, limit, after, before], description: List an ad account's campaigns }
+    - { id: adsets.list, method: GET, path: "/act_{ad_account_id}/adsets", path_params: [ad_account_id], query_params: [fields, effective_status, filtering, date_preset, time_range, limit, after, before], description: "List an ad account's ad sets, with budgets, bids, schedules and targeting" }
+    - { id: ads.list, method: GET, path: "/act_{ad_account_id}/ads", path_params: [ad_account_id], query_params: [fields, effective_status, filtering, date_preset, time_range, limit, after, before], description: List an ad account's ads }
+    - { id: creatives.list, method: GET, path: "/act_{ad_account_id}/adcreatives", path_params: [ad_account_id], query_params: [fields, limit, after, before], description: List an ad account's ad creatives }
+    - { id: audiences.list, method: GET, path: "/act_{ad_account_id}/customaudiences", path_params: [ad_account_id], query_params: [fields, limit, after, before], description: List an ad account's custom audiences }
+    - { id: insights.read, method: GET, path: "/act_{ad_account_id}/insights", path_params: [ad_account_id], query_params: [fields, level, date_preset, time_range, time_increment, breakdowns, action_breakdowns, filtering, sort, limit, after, before], description: "Read performance for an ad account at campaign, ad set or ad level over a date range" }
+    - { id: objects.read, method: GET, path: "/{object_id}", path_params: [object_id], query_params: [fields], description: "Read one campaign, ad set, ad, creative or audience by id" }
+    - { id: objects.insights, method: GET, path: "/{object_id}/insights", path_params: [object_id], query_params: [fields, level, date_preset, time_range, time_increment, breakdowns, action_breakdowns, filtering, sort, limit, after, before], description: "Read performance for one campaign, ad set or ad" }
+    - { id: delivery.estimate, method: GET, path: "/act_{ad_account_id}/delivery_estimate", path_params: [ad_account_id], query_params: [targeting_spec, optimization_goal, promoted_object], description: Estimate the audience size and daily reach for a targeting }
+    - { id: targeting.search, method: GET, path: "/search", query_params: [type, q, limit, location_types, country_code], description: "Search targeting options: interests, behaviors, locations and more, by type" }
+    - { id: campaigns.create, method: POST, path: "/act_{ad_account_id}/campaigns", path_params: [ad_account_id], body_params: [name, objective, status, special_ad_categories, buying_type, daily_budget, lifetime_budget, bid_strategy, spend_cap, start_time, stop_time, is_skadnetwork_attribution], action: create, risk: high, requires_approval: true, description: Create a campaign }
+    - { id: adsets.create, method: POST, path: "/act_{ad_account_id}/adsets", path_params: [ad_account_id], body_params: [name, campaign_id, status, daily_budget, lifetime_budget, billing_event, optimization_goal, bid_amount, bid_strategy, targeting, start_time, end_time, promoted_object, destination_type, attribution_spec, pacing_type], action: create, risk: high, requires_approval: true, description: "Create an ad set with its budget, bid, schedule and targeting" }
+    - { id: ads.create, method: POST, path: "/act_{ad_account_id}/ads", path_params: [ad_account_id], body_params: [name, adset_id, creative, status, tracking_specs, conversion_domain], action: create, risk: high, requires_approval: true, description: Create an ad from a creative }
+    - { id: creatives.create, method: POST, path: "/act_{ad_account_id}/adcreatives", path_params: [ad_account_id], body_params: [name, object_story_spec, object_story_id, asset_feed_spec, degrees_of_freedom_spec, url_tags, call_to_action_type], action: create, risk: high, requires_approval: true, description: "Create an ad creative, the content an ad publishes under the account's pages" }
+    - { id: objects.update, method: POST, path: "/{object_id}", path_params: [object_id], body_params: [name, status, daily_budget, lifetime_budget, spend_cap, bid_amount, bid_strategy, targeting, optimization_goal, billing_event, start_time, end_time, stop_time, promoted_object, creative, special_ad_categories, adlabels], action: update, risk: high, requires_approval: true, description: "Update a campaign, ad set or ad, including pausing or activating it and changing its budget" }
+    - { id: objects.delete, method: DELETE, path: "/{object_id}", path_params: [object_id], action: delete, risk: critical, requires_approval: true, description: "Delete a campaign, ad set, ad or creative" }

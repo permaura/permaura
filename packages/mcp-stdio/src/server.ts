@@ -22,7 +22,7 @@ export interface BridgeOptions extends GatewayClientOptions {
 /**
  * Build the STDIO MCP server that bridges the `permaura_*` tools to the local gateway.
  *
- * The MCP SDK's `Server` handles `initialize` and the JSON-RPC framing for us; we register two handlers:
+ * The MCP SDK's `Server` handles `initialize` and the JSON-RPC framing for us. Once the client has initialized, the bridge passes on who it says it is ({@link GatewayClient.introduce}), since the gateway never sees the client's own `initialize`. We register two handlers:
  *  - `tools/list` returns the gateway's live tool list, or the static {@link PERMAURA_TOOLS} advertisement when the gateway cannot be reached.
  *  - `tools/call` forwards the name and arguments to the gateway via {@link GatewayClient}, wrapping whatever the gateway returns as MCP tool-result content.
  *
@@ -39,6 +39,14 @@ export function createBridgeServer(options: BridgeOptions = {}): {
       tools: {},
     },
   });
+
+  server.oninitialized = () => {
+    const client = server.getClientVersion();
+    if (!client) return;
+    void gateway.introduce(client).then((refusal) => {
+      if (refusal) process.stderr.write(`[permaura-mcp] The Permaura gateway did not accept this agent's introduction: ${refusal}\n`);
+    });
+  };
 
   server.setRequestHandler(ListToolsRequestSchema, async () => {
     // Prefer the gateway's LIVE tool list: the fixed permaura_* tools PLUS a dynamic tool per

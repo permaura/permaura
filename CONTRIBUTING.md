@@ -6,13 +6,19 @@ codebase is somebody's production API key.
 
 ## Before you write code
 
-**Open an issue.** Bug reports, reproductions, feature requests and design arguments are all
-welcome, and the enforcement path in particular benefits from people poking holes in it. If you
-have found something that is wrong, saying so in an issue is the most useful thing you can do.
+**Ask in Discussions.** Questions about how something works, feature ideas and talk about how
+you use Permaura go in [GitHub Discussions](https://github.com/permaura/permaura/discussions). Post
+a question in the Q&A category, so the answer that solves it can be marked for the next person.
 
-**Security issues do not go in the issue tracker.** Report them privately: see
-[SECURITY.md](SECURITY.md) or `security@permaura.com`. That includes anything you are unsure
-about; we would much rather read a false alarm than find out from someone else.
+**Open an issue for a bug.** Bug reports, reproductions and design arguments go in the
+[issue tracker](https://github.com/permaura/permaura/issues), and the enforcement path in
+particular benefits from people poking holes in it. If you have found something that is wrong,
+saying so in an issue is the most useful thing you can do. Include the gateway version, what you
+did and what happened instead.
+
+**Security issues go in neither place.** Report them privately: see [SECURITY.md](SECURITY.md) or
+`security@permaura.com`. That includes anything you are unsure about; we would much rather read a
+false alarm than find out from someone else.
 
 ## License
 
@@ -41,7 +47,7 @@ paste the diff you would have sent, and we will write it up with the reasoning i
 you found it, the issue will say so.
 
 Security issues are the exception to all of this and still go to `security@permaura.com`, never
-to the tracker.
+to the tracker or to Discussions.
 
 ## Working on the code
 

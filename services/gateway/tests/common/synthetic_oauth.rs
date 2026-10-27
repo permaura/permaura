@@ -110,7 +110,7 @@ pub fn cred(access: &str, expires_at: i64) -> OAuthCredential {
 }
 
 pub fn cred_with_refresh(access: &str, refresh: &str, expires_at: i64) -> OAuthCredential {
-    OAuthCredential { token_auth: Default::default(),
+    OAuthCredential { token_auth: Default::default(), refresh_grant: Default::default(),
         layer: OAuthLayer::ByoApp,
         provider: "synthetic".into(),
         access_token: access.into(),

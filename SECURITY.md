@@ -5,8 +5,8 @@ production API key, so we would rather hear about a false alarm than miss a real
 
 ## Reporting a vulnerability
 
-**Email [security@permaura.com](mailto:security@permaura.com).** Do not open a public issue, and
-do not post it in a pull request description.
+**Email [security@permaura.com](mailto:security@permaura.com).** Do not open a public issue or
+discussion, and do not post it in a pull request description.
 
 Useful to include, as much as you have: what an attacker gains, the steps to reproduce it, the
 version or commit you tested, and whether it needs a paired device, an operator token, or network

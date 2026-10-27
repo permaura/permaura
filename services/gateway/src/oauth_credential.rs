@@ -44,6 +44,35 @@ pub enum TokenAuth {
     Basic,
 }
 
+/// How the gateway keeps an access token alive once the exchange is done. Almost every provider issues a
+/// refresh token and takes it back at the token endpoint under `grant_type=refresh_token`. Meta issues
+/// none: the code's short-lived user token is exchanged for a sixty-day one under
+/// `grant_type=fb_exchange_token`, and a still-valid long-lived token can be exchanged the same way for a
+/// fresh sixty days, so that exchange is the refresh. Recorded on the credential so a refresh sends the
+/// grant the provider accepts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RefreshGrant {
+    /// `grant_type=refresh_token` with the refresh token the provider issued.
+    #[default]
+    RefreshToken,
+    /// `grant_type=fb_exchange_token` with the current access token, which must still be valid.
+    ExchangeToken,
+}
+
+impl RefreshGrant {
+    /// Whether this grant renews the credential without a refresh token.
+    pub fn renews_without_refresh_token(self) -> bool {
+        self == RefreshGrant::ExchangeToken
+    }
+}
+
+/// How far ahead of expiry an exchange-renewed token is exchanged again. The exchange needs a token
+/// that is still valid, and a sixty-day token is used far less often than an hourly one, so the renewal
+/// window is a week rather than the two minutes a refresh token gets: any call in the last week of the
+/// token's life renews it for sixty more days.
+pub const EXCHANGE_RENEWAL_WINDOW_MS: i64 = 7 * 24 * 60 * 60 * 1000;
+
 /// A connection's OAuth credential, stored sealed (the same vault path as an API key). The access
 /// token is what gets injected upstream; the rest is what the gateway needs to keep it fresh.
 ///
@@ -80,6 +109,9 @@ pub struct OAuthCredential {
     /// How the client credentials are presented at `token_url`.
     #[serde(default)]
     pub token_auth: TokenAuth,
+    /// Which grant keeps the access token alive. A bundle sealed before the field existed refreshes with its refresh token.
+    #[serde(default)]
+    pub refresh_grant: RefreshGrant,
 }
 
 impl std::fmt::Debug for OAuthCredential {
@@ -94,6 +126,7 @@ impl std::fmt::Debug for OAuthCredential {
             .field("refresh_token", &self.refresh_token.is_some())
             .field("client_secret", &self.client_secret.is_some())
             .field("token_auth", &self.token_auth)
+            .field("refresh_grant", &self.refresh_grant)
             .finish_non_exhaustive()
     }
 }
@@ -102,13 +135,34 @@ impl OAuthCredential {
     /// True if the access token is at or within `skew_ms` of expiry. `expires_at == 0` (unknown /
     /// non-expiring) is treated as fresh.
     pub fn needs_refresh(&self, now_ms: i64, skew_ms: i64) -> bool {
+        let skew_ms = match self.refresh_grant {
+            RefreshGrant::ExchangeToken => skew_ms.max(EXCHANGE_RENEWAL_WINDOW_MS),
+            RefreshGrant::RefreshToken => skew_ms,
+        };
         self.expires_at != 0 && now_ms.saturating_add(skew_ms) >= self.expires_at
     }
 
-    /// Can this credential be refreshed locally by the gateway? (Has a refresh token, and isn't a
-    /// Managed credential: those are refreshed by permaura.com.)
+    /// Can this credential be refreshed locally by the gateway? (Has a refresh token, or a grant that
+    /// renews without one, and isn't a Managed credential: those are refreshed by permaura.com.)
     pub fn is_locally_refreshable(&self) -> bool {
-        self.layer != OAuthLayer::Managed && self.refresh_token.is_some()
+        self.layer != OAuthLayer::Managed && (self.refresh_token.is_some() || self.refresh_grant.renews_without_refresh_token())
+    }
+
+    /// The form a refresh sends to `token_url`, before the client credentials are added.
+    fn refresh_form(&self) -> std::collections::BTreeMap<String, String> {
+        let mut params = std::collections::BTreeMap::new();
+        match self.refresh_grant {
+            RefreshGrant::RefreshToken => {
+                let refresh_token = self.refresh_token.as_ref().expect("is_locally_refreshable checked Some");
+                params.insert("grant_type".to_string(), "refresh_token".to_string());
+                params.insert("refresh_token".to_string(), refresh_token.expose().to_string());
+            }
+            RefreshGrant::ExchangeToken => {
+                params.insert("grant_type".to_string(), "fb_exchange_token".to_string());
+                params.insert("fb_exchange_token".to_string(), self.access_token.expose().to_string());
+            }
+        }
+        params
     }
 }
 
@@ -189,14 +243,9 @@ pub async fn ensure_fresh(
     if !cred.needs_refresh(now_ms, skew_ms) || !cred.is_locally_refreshable() {
         return Ok((cred.access_token.clone(), None));
     }
-    let refresh_token = cred.refresh_token.as_ref().expect("is_locally_refreshable checked Some");
-
-    let mut params = std::collections::BTreeMap::new();
-    params.insert("grant_type".to_string(), "refresh_token".to_string());
-    params.insert("refresh_token".to_string(), refresh_token.expose().to_string());
     let req = token_request(
         &cred.token_url,
-        params,
+        cred.refresh_form(),
         cred.client_id.as_deref(),
         cred.client_secret.as_ref(),
         cred.token_auth,
@@ -253,7 +302,39 @@ mod tests {
             client_id: Some("cid".into()),
             client_secret: Some("csec".into()),
             token_auth: TokenAuth::Body,
+            refresh_grant: RefreshGrant::RefreshToken,
         }
+    }
+
+    #[tokio::test]
+    async fn an_exchange_renewed_credential_refreshes_by_exchanging_its_own_token_a_week_ahead() {
+        // Meta issues no refresh token; a valid long-lived token is exchanged for a new sixty-day one.
+        let http = MockHttpClient::new();
+        http.push_response(HttpResponse::json(200, serde_json::json!({ "access_token": "sixty_more_days", "token_type": "bearer", "expires_in": 5_184_000 })));
+        let week = EXCHANGE_RENEWAL_WINDOW_MS;
+        let mut c = cred(1_000_000 + week - 1, None, OAuthLayer::ByoApp);
+        c.refresh_grant = RefreshGrant::ExchangeToken;
+        assert!(c.is_locally_refreshable(), "renewable without a refresh token");
+        let (tok, updated) = ensure_fresh(&c, &http, 1_000_000, 60_000).await.unwrap();
+        assert_eq!(tok, "sixty_more_days");
+        let updated = updated.expect("credential changed");
+        assert_eq!(updated.expires_at, 1_000_000 + 5_184_000_000);
+        assert!(updated.refresh_token.is_none());
+        assert_eq!(updated.refresh_grant, RefreshGrant::ExchangeToken, "the renewed bundle keeps the grant");
+        let form = http.last_request().unwrap().form.clone().unwrap_or_default();
+        assert_eq!(form.get("grant_type").map(String::as_str), Some("fb_exchange_token"));
+        assert_eq!(form.get("fb_exchange_token").map(String::as_str), Some("old_access"));
+        assert_eq!(form.get("client_id").map(String::as_str), Some("cid"));
+        assert_eq!(form.get("client_secret").map(String::as_str), Some("csec"));
+        assert!(!form.contains_key("refresh_token"));
+
+        // More than a week out it is left alone, where a refresh-token credential would have been too.
+        let http = MockHttpClient::new();
+        let mut far = cred(1_000_000 + week + 1, None, OAuthLayer::ByoApp);
+        far.refresh_grant = RefreshGrant::ExchangeToken;
+        let (tok, updated) = ensure_fresh(&far, &http, 1_000_000, 60_000).await.unwrap();
+        assert_eq!(tok, "old_access");
+        assert!(updated.is_none());
     }
 
     #[tokio::test]

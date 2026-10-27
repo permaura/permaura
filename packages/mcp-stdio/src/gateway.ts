@@ -25,6 +25,9 @@ export const DEFAULT_GATEWAY_URL = "http://127.0.0.1:7376";
 /** Above the gateway's own 120 s request timeout, so the gateway's answer (its own 504 included) arrives before the bridge stops listening. */
 export const DEFAULT_TIMEOUT_MS = 150_000;
 
+/** The longest a request waits for the bridge's introduction before it is sent anyway, so a gateway slow to answer it never pushes a call past the MCP client's own timeout. */
+const INTRODUCTION_WAIT_MS = 5_000;
+
 /** Listing tools runs nothing, so a slow answer only costs the static list. */
 const LIST_TIMEOUT_MS = 30_000;
 
@@ -253,6 +256,8 @@ export class GatewayClient {
   private readonly fetchImpl: Exchange;
   private readonly fetchInjected: boolean;
   private readonly timeoutMs: number;
+  /** The bridge's own `initialize` to the gateway, which every later request waits for, so the code it carries is redeemed under the client's name rather than by whichever request reaches the gateway first. */
+  private introduction: Promise<unknown> = Promise.resolve();
 
   constructor(options: GatewayClientOptions = {}) {
     this.baseUrl = (options.baseUrl ?? DEFAULT_GATEWAY_URL).replace(/\/+$/, "");
@@ -358,9 +363,45 @@ export class GatewayClient {
   }
 
   /**
+   * Tell the gateway which MCP client is behind this bridge, as a client connected to the gateway directly does in its own `initialize`, so an enrolment code the bridge holds enrols its agent under that client's name. Requests made after this wait for it. Best effort: an answer the gateway cannot give is left for the next call to meet. Resolves to the gateway's refusal of the token, for the bridge to note on stderr, or `undefined`.
+   */
+  introduce(client: { name: string; version: string; title?: string }): Promise<string | undefined> {
+    if (!this.token) return Promise.resolve(undefined);
+    const clientInfo = { name: client.name, version: client.version, ...(client.title === undefined ? {} : { title: client.title }) };
+    const answered = this.fetchJson("POST", "/mcp", LIST_TIMEOUT_MS, {
+      jsonrpc: "2.0",
+      id: 0,
+      method: "initialize",
+      params: { protocolVersion: "2024-11-05", capabilities: {}, clientInfo },
+    }).then(
+      (res) => {
+        const message = (res.json as { error?: { message?: unknown } } | undefined)?.error?.message;
+        return typeof message === "string" ? message : undefined;
+      },
+      () => undefined,
+    );
+    this.introduction = answered;
+    return answered;
+  }
+
+  /** Wait for the introduction, for at most {@link INTRODUCTION_WAIT_MS}. */
+  private async introduced(): Promise<void> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const cap = new Promise<void>((resolve) => {
+      timer = setTimeout(resolve, INTRODUCTION_WAIT_MS);
+    });
+    try {
+      await Promise.race([this.introduction, cap]);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  /**
    * Fetch the gateway's advertised tools: the fixed `permaura_*` tools plus a dynamic tool per capability this session can reach (e.g. `fal.image.generate`). Returns `null` if the gateway has no `/mcp` endpoint or cannot be reached, so the caller can serve the static advertisement instead.
    */
   async listTools(): Promise<unknown[] | null> {
+    await this.introduced();
     try {
       const res = await this.fetchJson("POST", "/mcp", LIST_TIMEOUT_MS, {
         jsonrpc: "2.0",
@@ -380,6 +421,7 @@ export class GatewayClient {
    * Forward a single tool call to the gateway's `/mcp` endpoint, which handles both the fixed `permaura_*` tools and the dynamic per-capability tools. Only a 404 from `/mcp` moves the call to the REST mapping, and that decision is made per call, so one blip never moves later calls anywhere.
    */
   async callTool(name: string, args: Record<string, unknown>): Promise<GatewayToolResult> {
+    await this.introduced();
     const res = await this.fetchJson("POST", "/mcp", this.timeoutMs, {
       jsonrpc: "2.0",
       id: 1,

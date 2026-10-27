@@ -19,7 +19,7 @@ impl HttpClient for Provider {
   Ok(HttpResponse::json(200,serde_json::json!({"data":[]})))
  }
 }
-fn cred(access:&str,expiry:i64)->OAuthCredential {OAuthCredential{ token_auth: Default::default(),layer:OAuthLayer::ByoApp,provider:"synthetic".into(),access_token:access.into(),refresh_token:Some("synthetic-old-refresh".into()),expires_at:expiry,scopes:vec![],token_url:"https://provider.example/token".into(),client_id:Some("synthetic-client".into()),client_secret:None}}
+fn cred(access:&str,expiry:i64)->OAuthCredential {OAuthCredential{ token_auth: Default::default(), refresh_grant: Default::default(),layer:OAuthLayer::ByoApp,provider:"synthetic".into(),access_token:access.into(),refresh_token:Some("synthetic-old-refresh".into()),expires_at:expiry,scopes:vec![],token_url:"https://provider.example/token".into(),client_id:Some("synthetic-client".into()),client_secret:None}}
 fn put(store:&dyn Store,id:&str,c:&OAuthCredential){let old=store.get_secret(id).unwrap().unwrap();store.put_secret(SecretRecord{id:id.into(),sealed:seal(Cipher::Aes256Gcm,vault_passphrase(),to_sealed_json(c).unwrap().as_bytes()).unwrap(),metadata:old.metadata}).unwrap();}
 fn setup()->(Arc<EnforcementService>,Arc<Provider>,String){
  common::isolate_from_the_real_install();

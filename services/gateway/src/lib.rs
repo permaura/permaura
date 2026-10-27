@@ -41,6 +41,7 @@ pub mod audit_ceiling;
 pub mod audit_key;
 pub mod reconcile;
 pub mod backend;
+pub mod client_name;
 pub mod config;
 pub mod connectors;
 pub mod custody;

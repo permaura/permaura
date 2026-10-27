@@ -286,7 +286,7 @@ async fn a_credential_replaced_by_an_unwatched_write_is_still_seen() {
 }
 
 fn oauth_bundle(access: &str, refresh: &str) -> OAuthCredential {
-    OAuthCredential { token_auth: Default::default(),
+    OAuthCredential { token_auth: Default::default(), refresh_grant: Default::default(),
         layer: OAuthLayer::ByoApp,
         provider: "github".into(),
         access_token: access.into(),

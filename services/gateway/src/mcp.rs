@@ -284,14 +284,53 @@ fn authed(state: &AppState, headers: &HeaderMap) -> Option<Session> {
 
 /// What authenticating the caller's bearer gave, or `None` when there is no bearer to try.
 fn authenticated(state: &AppState, headers: &HeaderMap) -> Option<Result<Session, crate::error::GatewayError>> {
+    Some(state.service.authenticate(bearer(headers)?))
+}
+
+/// The caller's bearer token, or `None` when it sent none.
+fn bearer(headers: &HeaderMap) -> Option<&str> {
     let raw = headers
         .get(axum::http::header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok())?;
     let token = raw.strip_prefix("Bearer ").unwrap_or(raw).trim();
-    if token.is_empty() {
-        return None;
+    (!token.is_empty()).then_some(token)
+}
+
+/// Name the agent behind an enrolment-code bearer after `client`, the client its `initialize` says it is: a live code is redeemed under that name, and an agent the code already enrolled is renamed while nobody has named it ([`crate::service::EnforcementService::name_enrolled_agent_from_client`]).
+///
+/// `gated` is the session the resource-server gate already authenticated this bearer into, so it is not tried twice. Only an enrolment code is tried, so no other bearer meets a side effect at `initialize`, and naming never decides whether the caller connects: a code already redeemed is only looked up, and anything a lookup or a rename meets is left to the caller's next request. The one refusal returned is of a live code this redeems and spends (the agent allowance full, a failed grant), for `initialize` to answer with, since a client told it initialized could only hear next that it holds no session. A code refused while agents are paused is not spent, and waits for the resume as it did before.
+fn name_agent_after_client(state: &AppState, headers: &HeaderMap, gated: Option<Session>, client: &str) -> Result<(), crate::error::GatewayError> {
+    let Some(token) = bearer(headers).filter(|t| crate::service::is_enrolment_code(t)) else { return Ok(()) };
+    let session = match gated {
+        Some(session) => session,
+        None if state.service.enrolment_code_unredeemed(token) => match state.service.authenticate_as_client(token, Some(client)) {
+            Ok(session) => session,
+            Err(crate::error::GatewayError::Unauthorized(_) | crate::error::GatewayError::Denied(_)) => return Ok(()),
+            Err(refusal) => return Err(refusal),
+        },
+        None => match state.service.stored_live_session(token) {
+            Some(session) => session,
+            None => return Ok(()),
+        },
+    };
+    if let Err(e) = state.service.name_enrolled_agent_from_client(&session, client) {
+        tracing::debug!("an enrolled agent was not named after its client: {e}");
     }
-    Some(state.service.authenticate(token))
+    Ok(())
+}
+
+/// The gate's answer to a bearer that did not authenticate. A token that verifies but was not consented for an agent is told so (403), as is a code refused while agents are paused: a 401 challenge would send the client round the sign-in it already completed.
+fn gate_refusal(oauth: &crate::oauth::OAuthRs, refusal: crate::error::GatewayError) -> axum::response::Response {
+    use axum::response::IntoResponse;
+    match refusal {
+        denied @ crate::error::GatewayError::Denied(_) => denied.into_response(),
+        error => sign_in_challenge(oauth, &error.to_string()),
+    }
+}
+
+/// The display name of the client an `initialize` request says it is, from its `params.clientInfo`.
+fn initialize_client(req: &Value) -> Option<String> {
+    req.get("params").and_then(|p| p.get("clientInfo")).and_then(crate::client_name::client_display_name)
 }
 
 /// The 401 that starts an MCP client's OAuth flow at permaura.com, or makes one holding a lapsed token refresh it: `WWW-Authenticate` names this gateway's protected-resource metadata. Once `permaura remote disable` has withdrawn the resource server it is a plain 401 saying so. Shared with admission control, which answers a tokenless or lapsed caller with it ahead of every bucket.
@@ -340,15 +379,25 @@ pub async fn handle(
     // OAuth gate: when this gateway is an OAuth resource server, every /mcp request needs a valid
     // bearer; an unauthenticated request gets a 401 + WWW-Authenticate so the client starts the
     // OAuth flow at permaura.com. (Local gateways without a public URL keep open discovery.)
-    // It reads only the headers and runs before the body is parsed, so a refused caller's body never becomes a tree.
+    // It reads only the headers and runs before the body is parsed, so a refused caller's body never becomes a tree; the one exception is a live enrolment code, below.
+    let mut gated = None;
+    // A live enrolment code is let through unredeemed and redeemed once the body is read, so the agent it enrols is named after the client its `initialize` names, and the pending notice the redemption sends carries that name. Its body is read under the same budget as an authenticated caller's, and a refusal of the code then is answered as the gate answers it, or as the JSON-RPC error it is when no sign-in could clear it.
+    let mut unredeemed = None;
     if let Some(oauth) = state.service.oauth() {
         // Authenticated once: a second attempt to tell the refusals apart cost a refused request a second redemption attempt.
-        let refusal = match authenticated(&state, &headers) {
-            Some(Ok(_)) => None,
-            // A token that verifies but was not consented for an agent is told so (403): a 401 challenge would send the client round the sign-in it already completed.
-            Some(Err(denied @ crate::error::GatewayError::Denied(_))) => Some(denied.into_response()),
-            Some(Err(error)) => Some(sign_in_challenge(oauth, &error.to_string())),
-            None => Some(sign_in_challenge(oauth, "authorization required")),
+        let refusal = match bearer(&headers).filter(|t| state.service.enrolment_code_unredeemed(t)) {
+            Some(code) => {
+                unredeemed = Some((code, oauth));
+                None
+            }
+            None => match authenticated(&state, &headers) {
+                Some(Ok(session)) => {
+                    gated = Some(session);
+                    None
+                }
+                Some(Err(refusal)) => Some(gate_refusal(oauth, refusal)),
+                None => Some(sign_in_challenge(oauth, "authorization required")),
+            },
         };
         if let Some(refusal) = refusal {
             let limit = state.limits.config().body_exec_bytes;
@@ -375,16 +424,34 @@ pub async fn handle(
 
     let id = req.get_mut("id").map(Value::take).unwrap_or(Value::Null);
     let method = req.get("method").and_then(|m| m.as_str()).unwrap_or("").to_string();
+    // So an agent a code enrols shows as the client it says it is rather than as one more "Enrolled agent".
+    let client = if method == "initialize" { initialize_client(&req) } else { None };
+    if let Some((code, oauth)) = unredeemed {
+        match state.service.authenticate_as_client(code, client.as_deref()) {
+            Ok(session) => gated = Some(session),
+            Err(refusal @ (crate::error::GatewayError::Unauthorized(_) | crate::error::GatewayError::Denied(_))) => return gate_refusal(oauth, refusal),
+            // The agent allowance full, or the store failing: a sign-in challenge would send the client round a sign-in that cannot help.
+            Err(refusal) => return rpc_error(id, tool_error(refusal)).into_response(),
+        }
+    }
 
     let body: Json<Value> = match method.as_str() {
-        "initialize" => rpc_result(
-            id,
-            json!({
-                "protocolVersion": "2024-11-05",
-                "serverInfo": { "name": "permaura-gateway", "version": env!("CARGO_PKG_VERSION") },
-                "capabilities": { "tools": {} }
-            }),
-        ),
+        "initialize" => {
+            // Answered as before, unless a live code this redeems was refused and spent.
+            if let Some(client) = &client {
+                if let Err(refusal) = name_agent_after_client(&state, &headers, gated.take(), client) {
+                    return rpc_error(id, tool_error(refusal)).into_response();
+                }
+            }
+            rpc_result(
+                id,
+                json!({
+                    "protocolVersion": "2024-11-05",
+                    "serverInfo": { "name": "permaura-gateway", "version": env!("CARGO_PKG_VERSION") },
+                    "capabilities": { "tools": {} }
+                }),
+            )
+        }
         "tools/list" => {
             // The seven fixed permaura.* tools, PLUS one dynamic tool per capability in the
             // catalog (e.g. `fal.image.generate`) so an agent sees each ability as a
@@ -582,7 +649,7 @@ async fn call_tool(
                 actor: None,
             };
             // Recorded before the bearer is granted, as the code-as-bearer redemption is.
-            state.service.grant_enrolled_session(&session, &ticket, "mcp_tool").map_err(internal)?;
+            state.service.grant_enrolled_session(&session, &ticket, "mcp_tool", None).map_err(internal)?;
             Ok(ToolOut::Value(json!({
                 "agent_id": agent_id,
                 "status": "pending",
@@ -954,3 +1021,7 @@ fn humanize_cap_id(id: &str) -> String {
         None => spaced,
     }
 }
+
+#[cfg(test)]
+#[path = "agent_name_from_client_tests.rs"]
+mod agent_name_from_client_tests;

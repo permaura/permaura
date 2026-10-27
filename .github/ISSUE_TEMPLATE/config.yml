@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Questions and ideas
+    url: https://github.com/permaura/permaura/discussions/categories/q-a
+    about: Ask how something works in Q&A, or suggest a feature in Ideas. Issues are for bug reports.
+  - name: Report a security vulnerability
+    url: https://github.com/permaura/permaura/security/policy
+    about: Never in a public issue or discussion. Email security@permaura.com privately; the security policy has the process.

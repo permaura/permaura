@@ -27,7 +27,7 @@ use sha2::{Digest, Sha256};
 
 use crate::connectors::HttpClient;
 use crate::error::GatewayError;
-use crate::oauth_credential::{token_request, OAuthCredential, OAuthLayer, TokenAuth};
+use crate::oauth_credential::{token_request, OAuthCredential, OAuthLayer, TokenAuth, RefreshGrant};
 use crate::store::{Session, Store};
 
 /// How long an operator has to complete the browser dance before the pending authorization is swept.
@@ -100,6 +100,8 @@ pub struct PendingAuth {
     pub binding: PendingBinding,
     /// How the provider's token endpoint takes the client credentials, from the connector's manifest.
     pub token_auth: TokenAuth,
+    /// Which grant keeps the token alive afterwards, from the connector's manifest.
+    pub refresh_grant: RefreshGrant,
 }
 
 impl std::fmt::Debug for PendingAuth {
@@ -115,6 +117,7 @@ impl std::fmt::Debug for PendingAuth {
             .field("created_ms", &self.created_ms)
             .field("binding", &self.binding)
             .field("token_auth", &self.token_auth)
+            .field("refresh_grant", &self.refresh_grant)
             .finish_non_exhaustive()
     }
 }
@@ -548,11 +551,13 @@ pub async fn exchange_code(
             resp.status
         )));
     }
-    let token: TokenResponse = serde_json::from_slice(&resp.body)
+    let mut token: TokenResponse = serde_json::from_slice(&resp.body)
         .map_err(|e| GatewayError::Internal(format!("oauth token exchange: bad response: {e}")))?;
     drop(resp);
 
-    if token.refresh_token.is_none() {
+    if pending.refresh_grant == RefreshGrant::ExchangeToken {
+        token = exchange_for_long_lived(http, pending, token).await?;
+    } else if token.refresh_token.is_none() {
         return Err(GatewayError::BadRequest(
             "the provider returned no refresh token, so this connection would stop working when the \
              access token expires. Check the app is not in a testing/sandbox mode that withholds \
@@ -581,7 +586,35 @@ pub async fn exchange_code(
         client_id: Some(pending.client_id.clone()),
         client_secret: Some(pending.client_secret.clone()),
         token_auth: pending.token_auth,
+        refresh_grant: pending.refresh_grant,
     })
+}
+
+/// Trade the short-lived token a Meta code exchange returns for the sixty-day one the credential keeps,
+/// with the same client credentials. The short-lived token lasts an hour or two and Meta issues no
+/// refresh token, so without this step the connection would die within the hour.
+async fn exchange_for_long_lived(http: &dyn HttpClient, pending: &PendingAuth, short: TokenResponse) -> Result<TokenResponse, GatewayError> {
+    let mut form = BTreeMap::new();
+    form.insert("grant_type".to_string(), "fb_exchange_token".to_string());
+    form.insert("fb_exchange_token".to_string(), short.access_token.expose().to_string());
+    let req = token_request(&pending.token_url, form, Some(&pending.client_id), Some(&pending.client_secret), pending.token_auth);
+    let resp = http
+        .send_secret(req)
+        .await
+        .map_err(|e| GatewayError::upstream("oauth long-lived token exchange failed", &e))?;
+    if resp.status >= 400 {
+        return Err(GatewayError::BadRequest(format!(
+            "oauth long-lived token exchange rejected ({}): the provider would not extend the token it had just issued",
+            resp.status
+        )));
+    }
+    let mut long: TokenResponse = serde_json::from_slice(&resp.body)
+        .map_err(|e| GatewayError::Internal(format!("oauth long-lived token exchange: bad response: {e}")))?;
+    drop(resp);
+    if long.scope.is_none() {
+        long.scope = short.scope;
+    }
+    Ok(long)
 }
 
 #[cfg(test)]
@@ -608,7 +641,47 @@ mod tests {
             created_ms: 1_000,
             binding: binding(&Arc::new(CredentialRevisions::default())),
             token_auth: TokenAuth::Body,
+            refresh_grant: RefreshGrant::RefreshToken,
         }
+    }
+
+    #[tokio::test]
+    async fn an_exchange_token_grant_trades_the_short_lived_token_for_a_long_lived_one_and_needs_no_refresh_token() {
+        // Meta: the code exchange yields an hour-long token and no refresh token; the long-lived exchange is what the credential keeps.
+        let http = MockHttpClient::default();
+        http.push_response(HttpResponse::json(200, serde_json::json!({ "access_token": "short", "token_type": "bearer", "expires_in": 5_000 })));
+        http.push_response(HttpResponse::json(200, serde_json::json!({ "access_token": "long", "token_type": "bearer", "expires_in": 5_184_000 })));
+        let mut p = pending();
+        p.provider = "meta-ads".into();
+        p.token_url = "https://graph.facebook.com/v26.0/oauth/access_token".into();
+        p.code_verifier = None;
+        p.scopes = vec!["ads_read".into()];
+        p.refresh_grant = RefreshGrant::ExchangeToken;
+        let cred = exchange_code(&http, &p, "the-code", 1_000).await.unwrap();
+        assert_eq!(cred.access_token.expose(), "long");
+        assert!(cred.refresh_token.is_none());
+        assert_eq!(cred.expires_at, 1_000 + 5_184_000_000, "the long-lived token's expiry, not the short one's");
+        assert_eq!(cred.refresh_grant, RefreshGrant::ExchangeToken);
+        assert_eq!(cred.scopes, vec!["ads_read".to_string()], "Meta names no scope in the token response, so the requested ones stand");
+        assert!(cred.is_locally_refreshable());
+        let sent = http.last_request().unwrap();
+        assert_eq!(sent.url, "https://graph.facebook.com/v26.0/oauth/access_token");
+        let form = sent.form.clone().unwrap_or_default();
+        assert_eq!(form.get("grant_type").map(String::as_str), Some("fb_exchange_token"));
+        assert_eq!(form.get("fb_exchange_token").map(String::as_str), Some("short"));
+        assert_eq!(form.get("client_id").map(String::as_str), Some("cid"));
+        assert_eq!(form.get("client_secret").map(String::as_str), Some("csecret"));
+    }
+
+    #[tokio::test]
+    async fn a_refused_long_lived_exchange_fails_the_dance_rather_than_sealing_the_hour_long_token() {
+        let http = MockHttpClient::default();
+        http.push_response(HttpResponse::json(200, serde_json::json!({ "access_token": "short", "expires_in": 5_000 })));
+        http.push_response(HttpResponse::json(400, serde_json::json!({ "error": { "message": "no" } })));
+        let mut p = pending();
+        p.refresh_grant = RefreshGrant::ExchangeToken;
+        let err = exchange_code(&http, &p, "the-code", 1_000).await.unwrap_err();
+        assert!(format!("{err:?}").contains("long-lived"), "got {err:?}");
     }
 
     fn binding(revisions: &Arc<CredentialRevisions>) -> PendingBinding {
@@ -775,6 +848,7 @@ mod tests {
             client_id: Some("cid".into()),
             client_secret: Some("sec".into()),
             token_auth: TokenAuth::Basic,
+            refresh_grant: RefreshGrant::RefreshToken,
         };
         let json = to_sealed_json(&cred).unwrap();
         assert_eq!(from_sealed_bytes(json.as_bytes()).unwrap(), cred);

@@ -948,6 +948,12 @@ pub const ENROLMENT_CODE_MINT_ACTION: &str = "permaura.enrolment_code.mint";
 /// The audit action recorded when an enrolment code is redeemed into a new agent and its bearer, the resource the agent's id.
 pub const AGENT_ENROLL_ACTION: &str = "permaura.agent.enroll";
 
+/// The audit action recorded when a code-enrolled agent nobody had named is named after the client its `initialize` says it is, the resource the agent's id.
+pub const AGENT_NAMED_BY_CLIENT_ACTION: &str = "permaura.agent.named_by_client";
+
+/// The name of an agent an enrolment code enrolled when neither the operator's label nor its client named it.
+pub const DEFAULT_ENROLLED_AGENT_NAME: &str = "Enrolled agent";
+
 const AGENT_GATE_UNSET: u8 = 0;
 const AGENT_GATE_STORED_OFF: u8 = 1;
 const AGENT_GATE_STORED_ON: u8 = 2;
@@ -4412,6 +4418,11 @@ impl EnforcementService {
     /// invoke anything until an operator approves it, and cannot drive the console (Agent
     /// role), so a leaked code still grants nothing on its own.
     pub fn authenticate(&self, token: &str) -> Result<Session, GatewayError> {
+        self.authenticate_as_client(token, None)
+    }
+
+    /// [`Self::authenticate`] for a caller that has said which client it is, as an MCP `initialize` does: an enrolment code it redeems names the new agent `client`, a display name from [`crate::client_name::client_display_name`], unless the operator labeled the code.
+    pub fn authenticate_as_client(&self, token: &str, client: Option<&str>) -> Result<Session, GatewayError> {
         // An empty bearer names nobody, and a stored row with an empty token must never be one it finds.
         if token.is_empty() {
             return Err(GatewayError::Unauthorized("empty bearer token".into()));
@@ -4467,7 +4478,7 @@ impl EnforcementService {
         if self.agents_paused() && self.store.enrolment_code_redeemable(token, now_ms())? {
             self.refuse_enrolment_if_agents_paused()?;
         }
-        if let Some(session) = self.bootstrap_from_enrolment_code(token)? {
+        if let Some(session) = self.bootstrap_from_enrolment_code(token, client)? {
             if session.role == SessionRole::Agent {
                 self.refuse_if_agents_paused()?;
             }
@@ -4476,6 +4487,17 @@ impl EnforcementService {
         Err(GatewayError::Unauthorized(
             "unknown or missing session token".into(),
         ))
+    }
+
+    /// The live session a stored bearer opens, read without touching it or redeeming anything: `None` for a bearer that opens none, and on a store failure.
+    pub fn stored_live_session(&self, bearer: &str) -> Option<Session> {
+        let session = self.store.session_by_token(bearer).ok()??;
+        self.stored_session_is_live(&session, now_ms()).then_some(session)
+    }
+
+    /// Whether `bearer` is an enrolment code that nobody has redeemed and that is still redeemable: a store read, never a write. A store failure answers `false`, so the caller authenticates the bearer as it would any other.
+    pub fn enrolment_code_unredeemed(&self, bearer: &str) -> bool {
+        is_enrolment_code(bearer) && self.store.enrolment_code_redeemable(bearer, now_ms()).unwrap_or(false)
     }
 
     /// Whether this run has agents paused and `session` is an agent's that was live when the pause began, so its expiry is held still until the resume moves it.
@@ -4766,7 +4788,9 @@ impl EnforcementService {
     /// freshly-created agent (token = the code). Returns `None` if `code` is not a live
     /// enrolment code. Handles the concurrent-first-call race by returning any session that a
     /// racing call already bootstrapped under the same token.
-    fn bootstrap_from_enrolment_code(&self, code: &str) -> Result<Option<Session>, GatewayError> {
+    ///
+    /// The agent is named by the operator's label on the code, else by `client`, the name the redeeming client gave itself, else [`DEFAULT_ENROLLED_AGENT_NAME`].
+    fn bootstrap_from_enrolment_code(&self, code: &str, client: Option<&str>) -> Result<Option<Session>, GatewayError> {
         let now = now_ms();
         // Every bearer that names nothing ends here, and consuming is a write: on a hosted worker one that waits on the snapshot upload. Looked up first, so a stranger's junk costs a read.
         if !self.store.enrolment_code_redeemable(code, now)? {
@@ -4779,10 +4803,9 @@ impl EnforcementService {
             None => return self.store.session_by_token(code),
         };
 
+        let chosen = ticket.label.as_deref().filter(|label| !label.trim().is_empty()).or(client.filter(|c| !c.is_empty()));
         // A unique agent id that can never collide with an operator/seeded agent.
-        let slug: String = ticket
-            .label
-            .as_deref()
+        let slug: String = chosen
             .unwrap_or("agent")
             .to_lowercase()
             .chars()
@@ -4794,7 +4817,7 @@ impl EnforcementService {
             if slug.is_empty() { "agent" } else { slug },
             &short_id()[..8]
         );
-        let name = ticket.label.clone().unwrap_or_else(|| "Enrolled agent".to_string());
+        let name = chosen.unwrap_or(DEFAULT_ENROLLED_AGENT_NAME).to_string();
         // The code has already been consumed by this point, so a refusal here spends it. That is the
         // right way round: the alternative is checking before the consume and leaving a live code
         // behind on every refusal, which is a code an operator believes they issued once.
@@ -4824,7 +4847,7 @@ impl EnforcementService {
             last_used_at: None,
             actor: None,
         };
-        self.grant_enrolled_session(&session, &ticket, "bearer")?;
+        self.grant_enrolled_session(&session, &ticket, "bearer", client)?;
         Ok(Some(session))
     }
 
@@ -4832,9 +4855,10 @@ impl EnforcementService {
     /// first and the session put after it, as one unit, so a bearer whose issue is not in the chain is
     /// never granted. A record that lands and a put that fails leaves a record of an enrolment that did
     /// not stand, the safe way round. The code is spent either way. `via` names the redemption path, and
-    /// the code's own times join the record to its mint without naming the code.
-    pub fn grant_enrolled_session(&self, session: &Session, ticket: &crate::store::EnrolmentCode, via: &str) -> Result<(), GatewayError> {
-        let summary = serde_json::json!({
+    /// the code's own times join the record to its mint without naming the code. `client` is the name the
+    /// redeeming client gave itself, recorded as its claim whether or not it named the agent.
+    pub fn grant_enrolled_session(&self, session: &Session, ticket: &crate::store::EnrolmentCode, via: &str, client: Option<&str>) -> Result<(), GatewayError> {
+        let mut summary = serde_json::json!({
             "session_id": &session.id,
             "label": ticket.label,
             "status": "pending",
@@ -4842,12 +4866,61 @@ impl EnforcementService {
             "code_created_at": ticket.created_at,
             "code_expires_at": ticket.expires_at,
         });
+        if let (Some(client), Some(map)) = (client, summary.as_object_mut()) {
+            map.insert("client".into(), serde_json::json!(client));
+        }
         self.store.change_with_record(&mut || {
             self.audit_authority(AGENT_ENROLL_ACTION, &session.agent_id, session, summary.clone())?;
             self.store.put_session(session.clone())
         })
     }
 
+
+    /// Name a code-enrolled agent after the client it says it is, when nobody has named it yet: it is still Pending and still carries [`DEFAULT_ENROLLED_AGENT_NAME`]. Returns whether it was renamed.
+    ///
+    /// For the agent its code enrolled on an earlier request, one that named no client. Only the name is written, inside one unit of work, so an approval or an operator's rename landing meanwhile is never written back over. The rename is recorded as [`AGENT_NAMED_BY_CLIENT_ACTION`] under the agent's own session, and undone if the record cannot be written. The pending notice already announced keeps the name it was announced with: announcing it again could land after an approval resolved it and reopen it.
+    pub fn name_enrolled_agent_from_client(&self, session: &Session, client: &str) -> Result<bool, GatewayError> {
+        if session.role != SessionRole::Agent || client.is_empty() || client == DEFAULT_ENROLLED_AGENT_NAME {
+            return Ok(false);
+        }
+        // A plain read first, so the reconnect of an agent that has a name never waits on the unit of work below.
+        let unnamed = |agent: &Agent| agent.status == AgentStatus::Pending && agent.name == DEFAULT_ENROLLED_AGENT_NAME;
+        if !self.store.get_agent(&session.agent_id)?.is_some_and(|agent| unnamed(&agent)) {
+            return Ok(false);
+        }
+        let swap = |from: &str, to: &str, only_pending: bool| {
+            self.store.transaction(|store| {
+                let Some(mut agent) = store.get_agent(&session.agent_id)? else { return Ok(false) };
+                if (only_pending && agent.status != AgentStatus::Pending) || agent.name != from {
+                    return Ok(false);
+                }
+                agent.name = to.to_string();
+                store.put_agent(agent)?;
+                Ok(true)
+            })
+        };
+        let summary = serde_json::json!({
+            "session_id": &session.id,
+            "name": client,
+            "previous_name": DEFAULT_ENROLLED_AGENT_NAME,
+            "status": "pending",
+        });
+        let mut renamed = false;
+        self.store.change_with_record(&mut || {
+            renamed = swap(DEFAULT_ENROLLED_AGENT_NAME, client, true)?;
+            if !renamed {
+                return Ok(());
+            }
+            if let Err(e) = self.audit_authority(AGENT_NAMED_BY_CLIENT_ACTION, &session.agent_id, session, summary.clone()) {
+                renamed = false;
+                // Whatever its status by now, so an approval landing meanwhile does not keep an unrecorded name.
+                let _ = swap(client, DEFAULT_ENROLLED_AGENT_NAME, false);
+                return Err(e);
+            }
+            Ok(())
+        })?;
+        Ok(renamed)
+    }
 
     /// Ring for an agent that has just enrolled and is sitting Pending.
     ///
@@ -7906,6 +7979,11 @@ pub fn short_id() -> String {
 /// (non-conformant) token that omits `azp`.
 pub(crate) fn oauth_agent_id(claims: &crate::oauth::VerifiedClaims) -> String {
     format!("oauth:{}", claims.azp.as_deref().unwrap_or(&claims.sub))
+}
+
+/// Whether `bearer` is shaped like an enrolment code, with or without the console prefix: the bearer a code-enrolled agent keeps as its session token.
+pub(crate) fn is_enrolment_code(bearer: &str) -> bool {
+    bearer.strip_prefix(crate::CONSOLE_TOKEN_PREFIX).unwrap_or(bearer).starts_with("ENRL-")
 }
 
 /// Whether `bearer` is an enrolment code an older gateway minted, before codes carried 128 bits: `ENRL-` and fewer than eight groups of hex digits, with or without the console prefix. Its session keeps the expiry it had instead of sliding, so a 64-bit bearer, stored as an unsalted digest, ends at most one TTL after its last use before the upgrade and its agent enrols again.

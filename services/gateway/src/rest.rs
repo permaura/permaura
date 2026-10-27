@@ -4555,6 +4555,8 @@ fn preset_json(p: &crate::presets::Preset) -> serde_json::Value {
         "wordpress": p.wordpress.as_ref().map(|w| json!({ "namespace": w.namespace })),
         // A WordPress preset's host is the operator's site and a templated `base_url` names none at all, so `from-preset` refuses either without the missing piece and the console must ask for it.
         "base_url_required": p.wordpress.is_some() || p.base_url.contains('{'),
+        // Headers every connection to this connector sends with a value only the operator has, so the console asks for them beside the name.
+        "connection_headers": p.connection_headers,
         "safe_count": safe,
         "gated_count": gated,
         "capabilities": cap_json,
@@ -5017,9 +5019,14 @@ fn validate_override_base_url(raw: &str) -> Result<String, GatewayError> {
 }
 
 /// Validate the per-connection `static_headers` override: real header tokens, no credential-bearing
-/// names, and no CR/LF in a value (header injection).
+/// names, and no CR/LF in a value (header injection). `declared` are the headers the connector's own
+/// manifest asks every connection for: a name among them passes the credential-shaped check, since the
+/// manifest (one Permaura vouches for) says the value identifies the operator's API access and the
+/// account is authorized by the sealed credential beside it, the way Google's and Microsoft's
+/// developer tokens work; the header names the gateway itself owns are still refused.
 fn validate_override_headers(
     headers: &BTreeMap<String, String>,
+    declared: &[crate::presets::ConnectionHeader],
 ) -> Result<BTreeMap<String, String>, GatewayError> {
     let mut out = BTreeMap::new();
     for (name, value) in headers {
@@ -5037,8 +5044,9 @@ fn validate_override_headers(
                 "static_headers name '{name}' is not a valid HTTP header token"
             )));
         }
+        let declared_here = declared.iter().any(|h| h.name.eq_ignore_ascii_case(name));
         if FORBIDDEN_OVERRIDE_HEADERS.iter().any(|f| name.eq_ignore_ascii_case(f))
-            || looks_like_credential(name)
+            || (looks_like_credential(name) && !declared_here)
         {
             return Err(GatewayError::BadRequest(format!(
                 "static_headers may not set '{name}': a credential belongs in the connection's sealed \
@@ -5060,17 +5068,63 @@ fn validate_override_headers(
     Ok(out)
 }
 
-/// Validate and assemble the per-connection overrides from a `from-preset` request.
-fn validate_preset_overrides(req: &FromPresetReq) -> Result<crate::presets::PresetOverrides, GatewayError> {
+/// Validate and assemble the per-connection overrides from a `from-preset` request. A header the
+/// manifest declares every connection needs must be given, so a connection that could never answer is
+/// refused here rather than at its first call.
+fn validate_preset_overrides(req: &FromPresetReq, preset: &crate::presets::Preset) -> Result<crate::presets::PresetOverrides, GatewayError> {
     let base_url = match req.base_url.as_deref() {
         Some(raw) => Some(validate_override_base_url(raw)?),
         None => None,
     };
+    let declared: &[crate::presets::ConnectionHeader] = if preset.vouched { &preset.connection_headers } else { &[] };
     let static_headers = match req.static_headers.as_ref() {
-        Some(h) => validate_override_headers(h)?,
+        Some(h) => validate_override_headers(h, declared)?,
         None => BTreeMap::new(),
     };
+    for header in preset.connection_headers.iter().filter(|h| h.required) {
+        let given = static_headers.iter().any(|(name, value)| name.eq_ignore_ascii_case(&header.name) && !value.trim().is_empty());
+        if !given {
+            return Err(GatewayError::BadRequest(format!(
+                "static_headers must set '{}' ({}): every {} connection sends it",
+                header.name,
+                if header.label.is_empty() { header.name.as_str() } else { header.label.as_str() },
+                preset.name
+            )));
+        }
+    }
     Ok(crate::presets::PresetOverrides { base_url, static_headers, ..Default::default() })
+}
+
+#[cfg(test)]
+mod connection_header_override_tests {
+    use super::*;
+
+    fn declared(name: &str, required: bool) -> crate::presets::ConnectionHeader {
+        crate::presets::ConnectionHeader { name: name.into(), label: "Developer token".into(), description: String::new(), required }
+    }
+
+    #[test]
+    fn a_credential_shaped_name_passes_only_when_the_manifest_declares_it() {
+        let given = BTreeMap::from([("developer-token".to_string(), "abc".to_string())]);
+        assert!(validate_override_headers(&given, &[]).is_err(), "undeclared, it is refused as before");
+        let ok = validate_override_headers(&given, &[declared("Developer-Token", true)]).unwrap();
+        assert_eq!(ok.get("developer-token").map(String::as_str), Some("abc"), "declared, case-insensitively, it is kept");
+        let auth = BTreeMap::from([("Authorization".to_string(), "Bearer x".to_string())]);
+        assert!(validate_override_headers(&auth, &[declared("Authorization", true)]).is_err(), "a header the gateway owns is refused whatever a manifest says");
+    }
+
+    #[test]
+    fn a_required_declared_header_must_be_given_and_an_unvouched_manifest_declares_nothing() {
+        let mut preset = crate::presets::catalog().get("google-ads").unwrap().clone();
+        let mut req = FromPresetReq { preset_id: "google-ads".into(), name: "ads".into(), id: None, label: None, base_url: None, static_headers: None, site_url: None };
+        let err = validate_preset_overrides(&req, &preset).unwrap_err();
+        assert!(format!("{err:?}").contains("developer-token"), "got {err:?}");
+        req.static_headers = Some(BTreeMap::from([("developer-token".to_string(), "abc".to_string())]));
+        let overrides = validate_preset_overrides(&req, &preset).unwrap();
+        assert_eq!(overrides.static_headers.get("developer-token").map(String::as_str), Some("abc"), "the optional login-customer-id may be left out");
+        preset.vouched = false;
+        assert!(validate_preset_overrides(&req, &preset).is_err(), "an unvouched copy of the manifest cannot admit a credential-shaped header");
+    }
 }
 
 /// `POST /v1/connections/from-preset`: create a connection from a marketplace preset. Mirrors
@@ -5101,7 +5155,7 @@ pub async fn create_from_preset(
     }
     // Validated before any field is moved out of `req`, and before anything is written, so a bad
     // override fails the whole call rather than leaving a half-built connection behind.
-    let mut overrides = validate_preset_overrides(&req)?;
+    let mut overrides = validate_preset_overrides(&req, &preset)?;
     let id = req
         .id
         .clone()
@@ -10639,6 +10693,7 @@ pub async fn start_connector_oauth(
             created_ms: now_ms(),
             binding,
             token_auth: oauth.token_auth,
+            refresh_grant: oauth.refresh_grant,
         },
         now_ms(),
     );

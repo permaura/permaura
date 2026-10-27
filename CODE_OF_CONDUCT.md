@@ -29,9 +29,9 @@ tolerated, whatever the technical merit of the person doing it.
 
 ## Security reports are different
 
-Do not open a public issue for a vulnerability. [SECURITY.md](SECURITY.md) has the disclosure
-process, and following it is part of behaving well here: a public report on a live flaw puts users at
-risk while everybody argues about severity.
+Do not open a public issue or discussion for a vulnerability. [SECURITY.md](SECURITY.md) has the
+disclosure process, and following it is part of behaving well here: a public report on a live flaw
+puts users at risk while everybody argues about severity.
 
 ## Enforcement
 
@@ -45,8 +45,8 @@ contributors, not less.
 
 ## Scope
 
-This applies in the repository, in issues and pull requests, and anywhere someone is representing the
-project in public.
+This applies in the repository, in issues, discussions and pull requests, and anywhere someone is
+representing the project in public.
 
 ---
 

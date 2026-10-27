@@ -122,8 +122,11 @@ needed to run the gateway. The name and logo are not covered by the code license
 ## Security and contributing
 
 Please report a vulnerability privately, by email to security@permaura.com, and never in a public
-issue: [SECURITY.md](SECURITY.md) has the process. Bug reports and design arguments are welcome as
-issues. Pull requests are closed for now, and [CONTRIBUTING.md](CONTRIBUTING.md) explains why and
-what helps instead. [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) is short.
+issue or discussion: [SECURITY.md](SECURITY.md) has the process. Questions, ideas and talk about how
+you use Permaura go in [GitHub Discussions](https://github.com/permaura/permaura/discussions). Bug
+reports, reproductions and design arguments are welcome as
+[issues](https://github.com/permaura/permaura/issues). Pull requests are closed for now, and
+[CONTRIBUTING.md](CONTRIBUTING.md) explains why and what helps instead.
+[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) is short.
 
 Permaura™ is a trademark of Pixelite SL.

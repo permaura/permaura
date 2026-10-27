@@ -48,6 +48,33 @@ pub struct OAuthPreset {
     /// `duration=permanent`, without which it issues no refresh token.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub authorize_params: BTreeMap<String, String>,
+    /// Which grant keeps the access token alive: a refresh token (the default), or, for Meta, which
+    /// issues none, exchanging the still-valid token for a new sixty-day one.
+    #[serde(default, skip_serializing_if = "is_refresh_token_grant")]
+    pub refresh_grant: crate::oauth_credential::RefreshGrant,
+}
+
+fn is_refresh_token_grant(g: &crate::oauth_credential::RefreshGrant) -> bool {
+    *g == crate::oauth_credential::RefreshGrant::RefreshToken
+}
+
+/// A header every connection to this connector sends with a value only the operator has: an API
+/// developer token, a manager account id. Asked for when the connection is made and stored as the
+/// connection's own static header, in the clear, so it must never be the credential itself: the header
+/// the sealed secret travels in is the auth scheme's, and the sealed secret authorizes the account.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ConnectionHeader {
+    /// The header name as the upstream reads it, e.g. `developer-token`.
+    pub name: String,
+    /// What to call it in a form.
+    #[serde(default)]
+    pub label: String,
+    /// Where the operator finds the value and what it does.
+    #[serde(default)]
+    pub description: String,
+    /// Whether a connection without it cannot work, so `from-preset` refuses one.
+    #[serde(default)]
+    pub required: bool,
 }
 
 fn is_body_token_auth(t: &crate::oauth_credential::TokenAuth) -> bool {
@@ -85,6 +112,10 @@ pub struct Preset {
     /// Mandatory non-auth headers the upstream requires (e.g. an API version).
     #[serde(default)]
     pub static_headers: BTreeMap<String, String>,
+    /// Headers every connection sends with a value only the operator has (a developer token, an account
+    /// id), asked for when the connection is made.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub connection_headers: Vec<ConnectionHeader>,
     /// How every capability's body params are encoded, unless a capability line says otherwise.
     /// Defaults to JSON; `form` for an upstream that only reads form bodies (Stripe's v1 API).
     #[serde(default, skip_serializing_if = "BodyStyle::is_json")]
@@ -480,13 +511,13 @@ mod tests {
     #[test]
     fn bundled_presets_parse_and_cover_the_catalog() {
         let cat = catalog();
-        assert_eq!(cat.list().len(), 31, "the bundled catalog");
+        assert_eq!(cat.list().len(), 35, "the bundled catalog");
         for id in [
             "stripe", "github", "slack", "gmail", "microsoft-graph", "vercel", "cloudflare",
             "linear", "hubspot", "openai", "braintree", "discord", "docusign", "dropbox",
             "elevenlabs", "fal", "google-analytics", "google-calendar", "google-drive", "google-meet",
             "google-veo", "heygen", "higgsfield", "mailchimp", "openrouter", "paddle", "square", "xero", "events-manager",
-            "reddit", "reddit-ads",
+            "reddit", "reddit-ads", "google-ads", "microsoft-ads", "microsoft-ads-reporting", "meta-ads",
         ] {
             assert!(cat.get(id).is_some(), "missing preset {id}");
         }
@@ -538,6 +569,136 @@ mod tests {
         }
         for spend in ["campaigns.create", "campaigns.update", "ad_groups.create", "ad_groups.update", "ads.create", "ads.update", "posts.create"] {
             assert!(aoff(spend) && acap(spend).requires_approval, "{spend} can start or change spend");
+        }
+    }
+
+    /// The JSON body a built request sends, as the upstream will read it.
+    fn sent_json(req: &crate::connectors::HttpRequest) -> serde_json::Value {
+        serde_json::from_str(req.json_encoded.as_deref().expect("a JSON body")).unwrap()
+    }
+
+    /// The three ad platforms share one shape: reads on (the POST-shaped ones declared as reads), every
+    /// call that can start or change spend off and gated, and the connection's declared headers on
+    /// every request.
+    fn ad_platform_posture(preset_id: &str, headers: &[(&str, &str)], reads: &[&str], spend: &[&str]) -> Instantiated {
+        let preset = catalog().get(preset_id).unwrap();
+        let mut overrides = PresetOverrides::default();
+        for (name, value) in headers {
+            overrides.static_headers.insert(name.to_string(), value.to_string());
+        }
+        let inst = preset.instantiate_with("c", "sec_c", &overrides);
+        let cap = |s: &str| inst.capabilities.iter().find(|c| c.id == format!("c.{s}")).unwrap_or_else(|| panic!("{preset_id} has no {s}"));
+        let off = |s: &str| inst.disabled_capabilities.contains(&format!("c.{s}"));
+        for read in reads {
+            let c = cap(read);
+            assert!(!off(read) && !c.requires_approval && is_read(c.action), "{preset_id}.{read} is a read");
+        }
+        for write in spend {
+            assert!(off(write) && cap(write).requires_approval, "{preset_id}.{write} can start or change spend");
+        }
+        assert_eq!(
+            preset.connection_headers.iter().map(|h| h.name.as_str()).collect::<Vec<_>>(),
+            headers.iter().map(|(n, _)| *n).collect::<Vec<_>>(),
+            "{preset_id} declares the headers every connection sends"
+        );
+        inst
+    }
+
+    #[test]
+    fn google_ads_sends_the_developer_token_and_manager_id_and_gates_every_mutate() {
+        let inst = ad_platform_posture(
+            "google-ads",
+            &[("developer-token", "dev-tok"), ("login-customer-id", "1234567890")],
+            &["customers.accessible", "search", "search_stream", "keyword_ideas.generate"],
+            &["campaign_budgets.mutate", "campaigns.mutate", "ad_groups.mutate", "ad_group_ads.mutate", "ad_group_criteria.mutate", "campaign_criteria.mutate", "mutate"],
+        );
+        let search = inst.capabilities.iter().find(|c| c.id == "c.search").unwrap();
+        let req = crate::connectors::build_request(search, &serde_json::json!({ "customer_id": "1112223333", "query": "SELECT campaign.id FROM campaign" }), b"ya29.tok").unwrap();
+        assert_eq!(req.url, "https://googleads.googleapis.com/v26/customers/1112223333/googleAds:search");
+        assert_eq!(req.headers.get("Authorization").map(String::as_str), Some("Bearer ya29.tok"));
+        assert_eq!(req.headers.get("developer-token").map(String::as_str), Some("dev-tok"));
+        assert_eq!(req.headers.get("login-customer-id").map(String::as_str), Some("1234567890"));
+        assert_eq!(req.headers.get("Content-Type").map(String::as_str), Some("application/json"));
+        assert_eq!(sent_json(&req).get("query").and_then(|q| q.as_str()), Some("SELECT campaign.id FROM campaign"));
+        let mutate = inst.capabilities.iter().find(|c| c.id == "c.mutate").unwrap();
+        assert_eq!(mutate.risk, RiskTier::Critical, "a batch across any resource is the widest write");
+        let oauth = catalog().get("google-ads").unwrap().oauth.clone().unwrap();
+        assert!(oauth.pkce && oauth.scopes == ["https://www.googleapis.com/auth/adwords"]);
+    }
+
+    #[test]
+    fn microsoft_ads_sends_its_three_headers_on_both_hosts_and_gates_every_add_and_update() {
+        let headers = [("DeveloperToken", "dev-tok"), ("CustomerId", "111"), ("CustomerAccountId", "222")];
+        let inst = ad_platform_posture(
+            "microsoft-ads",
+            &headers,
+            &["campaigns.list", "campaigns.read", "ad_groups.list", "ads.list", "keywords.list", "budgets.list", "campaign_criteria.list", "conversion_goals.list"],
+            &["campaigns.create", "campaigns.update", "ad_groups.create", "ad_groups.update", "ads.create", "ads.update", "keywords.create", "keywords.update", "budgets.create", "budgets.update"],
+        );
+        let list = inst.capabilities.iter().find(|c| c.id == "c.campaigns.list").unwrap();
+        let req = crate::connectors::build_request(list, &serde_json::json!({ "AccountId": 222, "CampaignType": "Search Shopping" }), b"eyJ.tok").unwrap();
+        assert_eq!(req.url, "https://campaign.api.bingads.microsoft.com/CampaignManagement/v13/Campaigns/QueryByAccountId");
+        assert_eq!(req.headers.get("Authorization").map(String::as_str), Some("Bearer eyJ.tok"));
+        for (name, value) in headers {
+            assert_eq!(req.headers.get(name).map(String::as_str), Some(value), "{name}");
+        }
+        assert_eq!(sent_json(&req).get("AccountId").and_then(|v| v.as_i64()), Some(222));
+        let update = inst.capabilities.iter().find(|c| c.id == "c.campaigns.update").unwrap();
+        assert_eq!(update.http.as_ref().unwrap().method, HttpMethod::Put, "the REST API updates with PUT on the collection");
+
+        let reporting = ad_platform_posture("microsoft-ads-reporting", &headers, &["reports.submit", "reports.poll"], &[]);
+        let submit = reporting.capabilities.iter().find(|c| c.id == "c.reports.submit").unwrap();
+        let req = crate::connectors::build_request(submit, &serde_json::json!({ "ReportRequest": { "Type": "CampaignPerformanceReportRequest" } }), b"t").unwrap();
+        assert_eq!(req.url, "https://reporting.api.bingads.microsoft.com/Reporting/v13/GenerateReport/Submit");
+        assert_eq!(req.headers.get("DeveloperToken").map(String::as_str), Some("dev-tok"));
+        for id in ["microsoft-ads", "microsoft-ads-reporting"] {
+            let oauth = catalog().get(id).unwrap().oauth.clone().unwrap();
+            assert_eq!(oauth.token_url, "https://login.microsoftonline.com/common/oauth2/v2.0/token", "{id}");
+            assert!(oauth.scopes.iter().any(|s| s == "offline_access"), "{id}: no refresh token without it");
+        }
+    }
+
+    #[test]
+    fn meta_ads_renews_by_exchange_and_gates_every_create_update_and_delete() {
+        use crate::oauth_credential::RefreshGrant;
+        let inst = ad_platform_posture(
+            "meta-ads",
+            &[],
+            &["me.read", "ad_accounts.list", "campaigns.list", "adsets.list", "ads.list", "insights.read", "objects.read", "objects.insights", "delivery.estimate", "targeting.search"],
+            &["campaigns.create", "adsets.create", "ads.create", "creatives.create", "objects.update", "objects.delete"],
+        );
+        let insights = inst.capabilities.iter().find(|c| c.id == "c.insights.read").unwrap();
+        let req = crate::connectors::build_request(insights, &serde_json::json!({ "ad_account_id": "123", "fields": "spend,impressions", "date_preset": "last_7d" }), b"EAAB").unwrap();
+        assert_eq!(req.url, "https://graph.facebook.com/v26.0/act_123/insights?fields=spend%2Cimpressions&date_preset=last_7d", "the account id fills its slot behind the act_ prefix");
+        assert_eq!(req.headers.get("Authorization").map(String::as_str), Some("Bearer EAAB"));
+        let update = inst.capabilities.iter().find(|c| c.id == "c.objects.update").unwrap();
+        let req = crate::connectors::build_request(update, &serde_json::json!({ "object_id": "2384", "status": "PAUSED" }), b"EAAB").unwrap();
+        assert_eq!(req.url, "https://graph.facebook.com/v26.0/2384");
+        assert_eq!(sent_json(&req).get("status").and_then(|v| v.as_str()), Some("PAUSED"));
+        let delete = inst.capabilities.iter().find(|c| c.id == "c.objects.delete").unwrap();
+        assert_eq!(delete.risk, RiskTier::Critical);
+        let oauth = catalog().get("meta-ads").unwrap().oauth.clone().unwrap();
+        assert_eq!(oauth.refresh_grant, RefreshGrant::ExchangeToken, "Meta issues no refresh token");
+        assert!(!oauth.pkce);
+        for p in catalog().list() {
+            if p.id != "meta-ads" {
+                if let Some(o) = &p.oauth {
+                    assert_eq!(o.refresh_grant, RefreshGrant::RefreshToken, "{}", p.id);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn declared_connection_headers_name_no_credential_header_and_every_other_preset_declares_none() {
+        for p in catalog().list() {
+            for h in &p.connection_headers {
+                assert!(!h.name.eq_ignore_ascii_case("authorization") && !h.label.is_empty() && !h.description.is_empty(), "{}: {}", p.id, h.name);
+                assert!(p.oauth.is_some(), "{}: a declared header rides beside a sealed OAuth token, never in place of a credential", p.id);
+            }
+            if !["google-ads", "microsoft-ads", "microsoft-ads-reporting"].contains(&p.id.as_str()) {
+                assert!(p.connection_headers.is_empty(), "{}", p.id);
+            }
         }
     }
 
