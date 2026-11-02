@@ -30,9 +30,10 @@ use crate::openapi::{classify, shape_floor};
 /// hosted app.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OAuthPreset {
-    /// The provider's authorization endpoint.
+    /// The provider's authorization endpoint. Empty for a client-credentials connector, which has no consent screen.
+    #[serde(default)]
     pub authorize_url: String,
-    /// The provider's token endpoint (code exchange + refresh).
+    /// The provider's token endpoint (code exchange + refresh). A client-credentials connector may give a path starting with `/` instead, for a vendor whose token endpoint is on each customer's own host; it resolves against the connection's base URL.
     pub token_url: String,
     /// The default scopes to request.
     #[serde(default)]
@@ -52,6 +53,51 @@ pub struct OAuthPreset {
     /// issues none, exchanging the still-valid token for a new sixty-day one.
     #[serde(default, skip_serializing_if = "is_refresh_token_grant")]
     pub refresh_grant: crate::oauth_credential::RefreshGrant,
+    /// How an access token is presented, when that is not how a pasted key is: Linear and Figma take a key their own way and a token as a Bearer.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub token_scheme: Option<AuthScheme>,
+    /// `client_credentials` for a vendor that mints tokens from a client id and secret with no consent screen. The operator pastes `client_id:client_secret` as the credential and the gateway holds both and renews by itself.
+    #[serde(default, skip_serializing_if = "OAuthGrant::is_authorization_code")]
+    pub grant: OAuthGrant,
+    /// The name a vendor gives `client_id` on both endpoints, such as TikTok's `client_key`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub client_id_param: Option<String>,
+    /// A client-credentials connector whose vendor also issues lasting tokens: a pasted value with no colon is sealed as that token, the way Shopify's older custom apps connect.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub accepts_token: bool,
+}
+
+/// How a connection gets its first token.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OAuthGrant {
+    /// A consent screen in a browser, then a code exchange.
+    #[default]
+    AuthorizationCode,
+    /// A client id and secret exchanged directly, with no person in the loop.
+    ClientCredentials,
+}
+
+impl OAuthGrant {
+    fn is_authorization_code(&self) -> bool {
+        *self == OAuthGrant::AuthorizationCode
+    }
+}
+
+/// What a connection to this connector needs pasted and where the operator gets it, for the line under the console's credential box.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CredentialHelp {
+    /// What the vendor calls the credential, e.g. `Personal access token`.
+    pub label: String,
+    /// The vendor's page where it is created.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+    /// One plain sentence: where to create it, and its exact format when it is not just the token.
+    #[serde(default)]
+    pub hint: String,
+    /// The vendor issues nothing to paste, so a connection needs an OAuth app and the console offers no key box.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub oauth_only: bool,
 }
 
 fn is_refresh_token_grant(g: &crate::oauth_credential::RefreshGrant) -> bool {
@@ -132,6 +178,9 @@ pub struct Preset {
     /// OAuth metadata, when the connector can be connected via OAuth as well as an API key.
     #[serde(default)]
     pub oauth: Option<OAuthPreset>,
+    /// What the operator pastes and where to get it. The console shows it only for a manifest Permaura vouches for, since a link in any other manifest is its author's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub credential: Option<CredentialHelp>,
     /// Present when this preset is a curated slice of a WordPress REST namespace. Its `base_url` is
     /// then only a template: every connection pins the operator's own site.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -159,6 +208,9 @@ pub struct PresetCap {
     /// Param names that fill `{name}` path segments.
     #[serde(default)]
     pub path_params: Vec<String>,
+    /// Those of `path_params` that may hold `/` as data, sent percent-encoded inside their one segment.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub segment_params: Vec<String>,
     /// Param names forwarded as the query string.
     #[serde(default)]
     pub query_params: Vec<String>,
@@ -399,9 +451,11 @@ impl Preset {
                     base_url: base_url.clone(),
                     path: format!("{}{}", overrides.path_prefix.as_deref().unwrap_or_default(), cap.path),
                     path_params: cap.path_params.clone(),
+                    segment_params: cap.segment_params.clone(),
                     query_params: cap.query_params.clone(),
                     body_params: cap.body_params.clone(),
                     auth: self.auth.clone(),
+                    oauth_auth: self.oauth.as_ref().and_then(|o| o.token_scheme.clone()),
                     static_headers: static_headers.clone(),
                     route_param: overrides.route_param.clone(),
                     body_style: cap.body_style.unwrap_or(self.body_style),
@@ -511,7 +565,7 @@ mod tests {
     #[test]
     fn bundled_presets_parse_and_cover_the_catalog() {
         let cat = catalog();
-        assert_eq!(cat.list().len(), 35, "the bundled catalog");
+        assert_eq!(cat.list().len(), 113, "the bundled catalog");
         for id in [
             "stripe", "github", "slack", "gmail", "microsoft-graph", "vercel", "cloudflare",
             "linear", "hubspot", "openai", "braintree", "discord", "docusign", "dropbox",
@@ -533,12 +587,16 @@ mod tests {
             assert_eq!(oauth.token_url, "https://www.reddit.com/api/v1/access_token");
             assert!(!oauth.pkce);
         }
-        // Every other connector keeps the form, so this change is invisible to them.
+        // Only the vendors whose token endpoint refuses the form leave it, each named here, and only Reddit adds to its authorization URL.
+        let basic = ["airtable", "calendly", "canva", "figma", "greenhouse", "klaviyo", "paypal", "pinterest", "quickbooks", "reddit", "reddit-ads", "x", "zoom"];
         for p in catalog().list() {
-            if !p.id.starts_with("reddit") {
-                if let Some(o) = &p.oauth {
-                    assert_eq!(o.token_auth, TokenAuth::Body, "{}", p.id);
-                    assert!(o.authorize_params.is_empty(), "{}", p.id);
+            if let Some(o) = &p.oauth {
+                let expected = if basic.contains(&p.id.as_str()) { TokenAuth::Basic } else { TokenAuth::Body };
+                assert_eq!(o.token_auth, expected, "{}", p.id);
+                let microsoft = o.authorize_url.starts_with("https://login.microsoftonline.com/");
+                assert_eq!(o.authorize_params.is_empty(), !p.id.starts_with("reddit") && !microsoft, "{}", p.id);
+                if microsoft {
+                    assert_eq!(o.authorize_params.get("prompt").map(String::as_str), Some("select_account"), "{}: prompt=consent asks for an admin where user consent is off", p.id);
                 }
             }
         }
@@ -681,10 +739,163 @@ mod tests {
         assert_eq!(oauth.refresh_grant, RefreshGrant::ExchangeToken, "Meta issues no refresh token");
         assert!(!oauth.pkce);
         for p in catalog().list() {
-            if p.id != "meta-ads" {
-                if let Some(o) = &p.oauth {
-                    assert_eq!(o.refresh_grant, RefreshGrant::RefreshToken, "{}", p.id);
+            if let Some(o) = &p.oauth {
+                let expected = match p.id.as_str() {
+                    "meta-ads" | "instagram" => RefreshGrant::ExchangeToken,
+                    "clickup" | "eventbrite" | "linkedin" => RefreshGrant::None,
+                    _ => RefreshGrant::RefreshToken,
+                };
+                assert_eq!(o.refresh_grant, expected, "{}", p.id);
+            }
+        }
+    }
+
+    /// The most used apps, in the order the marketplace shows them.
+    const MOST_USED: [&str; 100] = [
+        "gmail", "google-calendar", "google-drive", "outlook", "x", "google-sheets", "supabase", "notion",
+        "slack", "airtable", "google-docs", "hubspot", "gong", "asana", "ashby", "pipedrive",
+        "google-tasks", "linear", "github", "microsoft-teams", "firecrawl", "canvas-lms", "salesforce", "tavily",
+        "jira", "exa", "instagram", "serpapi", "youtube", "clickup", "microsoft-excel", "monday",
+        "reddit", "perplexity", "apollo", "figma", "people-data-labs", "attio", "stripe", "snowflake",
+        "facebook-pages", "posthog", "meta-ads", "linkedin", "shopify", "zendesk", "trello", "zoom",
+        "calendly", "typeform", "google-forms", "mailchimp", "quickbooks", "xero", "dropbox", "box",
+        "onedrive", "sharepoint", "discord", "telegram", "whatsapp", "docusign", "google-analytics", "google-ads",
+        "google-slides", "google-bigquery", "intercom", "freshdesk", "confluence", "gitlab", "bitbucket", "sentry",
+        "pagerduty", "datadog", "sendgrid", "klaviyo", "activecampaign", "brevo", "webflow", "wix",
+        "canva", "miro", "todoist", "basecamp", "smartsheet", "wrike", "microsoft-dynamics", "zoho-crm",
+        "square", "paypal", "bamboohr", "greenhouse", "servicenow", "eventbrite", "tiktok", "pinterest",
+        "vercel", "cloudflare", "openai", "elevenlabs",
+    ];
+
+    #[test]
+    fn the_catalog_lists_the_most_used_apps_first_in_order() {
+        let listed: Vec<&str> = catalog().list().iter().take(MOST_USED.len()).map(|p| p.id.as_str()).collect();
+        assert_eq!(listed, MOST_USED);
+    }
+
+    fn placeholders(text: &str) -> Vec<String> {
+        let mut names: Vec<String> = text.split('{').skip(1).filter_map(|part| part.split_once('}').map(|(name, _)| name.to_string())).collect();
+        names.sort();
+        names
+    }
+
+    #[test]
+    fn every_catalog_line_is_well_formed() {
+        let verticals = ["payments", "devtools", "comms", "crm", "data", "marketing", "productivity", "support", "commerce", "hr", "social", "files", "design"];
+        let mut ids = std::collections::BTreeSet::new();
+        for p in catalog().list() {
+            assert!(ids.insert(p.id.as_str()), "{} is listed twice", p.id);
+            assert!(verticals.contains(&p.vertical.as_str()), "{}: vertical {}", p.id, p.vertical);
+            assert!(p.base_url.starts_with("https://") && !p.base_url.ends_with('/'), "{}: {}", p.id, p.base_url);
+            assert!(p.logo.is_some(), "{} has no mark", p.id);
+            assert!(!p.capabilities.is_empty(), "{}", p.id);
+            let mut lines = std::collections::BTreeSet::new();
+            for c in &p.capabilities {
+                assert!(lines.insert(c.id.as_str()), "{}.{} is listed twice", p.id, c.id);
+                assert!(!c.description.is_empty(), "{}.{}", p.id, c.id);
+                let mut declared = c.path_params.clone();
+                declared.sort();
+                assert_eq!(placeholders(&c.path), declared, "{}.{}: path and path_params disagree", p.id, c.id);
+            }
+            if let Some(o) = &p.oauth {
+                assert!(o.token_url.starts_with("https://") || o.token_url.starts_with('/'), "{}: {}", p.id, o.token_url);
+                match o.grant {
+                    OAuthGrant::AuthorizationCode => assert!(o.authorize_url.starts_with("https://") && !o.authorize_url.contains('{') && !o.token_url.contains('{'), "{}: the gateway has no per-connection OAuth host", p.id),
+                    OAuthGrant::ClientCredentials => assert!(o.authorize_url.is_empty(), "{}: there is no consent screen", p.id),
                 }
+            }
+        }
+    }
+
+    #[test]
+    fn nothing_in_the_catalog_writes_or_sends_without_a_person_asked_first() {
+        for p in catalog().list() {
+            for c in p.preview() {
+                if is_read(c.action) {
+                    continue;
+                }
+                assert!(c.disabled, "{}.{} acts, so it starts switched off", p.id, c.id);
+                assert!(c.risk >= RiskTier::High || c.requires_approval, "{}.{} acts, so it holds for a person", p.id, c.id);
+                if p.credential.is_some() && matches!(c.action, Action::Send | Action::Charge | Action::Refund) {
+                    assert!(c.requires_approval, "{}.{} reaches a person or moves money, so it declares approval", p.id, c.id);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_connector_with_help_says_what_to_paste_and_where_it_is_made() {
+        let with_help: Vec<&Preset> = catalog().list().iter().filter(|p| p.credential.is_some()).collect();
+        assert!(with_help.len() >= 78, "{}", with_help.len());
+        for p in with_help {
+            let help = p.credential.as_ref().unwrap();
+            assert!(!help.label.is_empty() && !help.hint.is_empty(), "{}", p.id);
+            assert!(help.url.as_deref().is_none_or(|u| u.starts_with("https://")), "{}", p.id);
+            assert!(!help.oauth_only || p.oauth.is_some(), "{}: nothing to paste and no OAuth is no way in", p.id);
+        }
+    }
+
+    #[test]
+    fn a_vendor_that_takes_keys_and_tokens_differently_declares_how_a_token_travels() {
+        for id in ["linear", "mailchimp", "figma", "klaviyo", "clickup", "youtube"] {
+            let p = catalog().get(id).unwrap();
+            assert_eq!(p.oauth.as_ref().unwrap().token_scheme, Some(AuthScheme::Bearer), "{id}");
+            let inst = p.instantiate("conn", "sec");
+            let cap = &inst.capabilities[0];
+            let token_cap = crate::connectors::for_oauth_token(cap);
+            assert_eq!(token_cap.http.as_ref().unwrap().auth, AuthScheme::Bearer, "{id}");
+            assert_eq!(cap.http.as_ref().unwrap().auth, p.auth, "{id}: a pasted key still goes its own way");
+        }
+    }
+
+    /// A value in every slot a line declares, so each builds the request it would send.
+    fn sample_params(spec: &crate::connectors::HttpSpec) -> serde_json::Value {
+        let mut params = serde_json::Map::new();
+        for name in &spec.path_params {
+            params.insert(name.clone(), serde_json::json!("x1"));
+        }
+        if let Some(g) = &spec.graphql {
+            let operation = match g.operation {
+                crate::connectors::GraphqlOperation::Mutation => "mutation",
+                _ => "query",
+            };
+            let root = g.root_fields.first().map_or("viewer", String::as_str);
+            let document = format!("{operation} {{ {root} {{ id }} }}");
+            params.insert("query".to_string(), serde_json::json!(document));
+        }
+        serde_json::Value::Object(params)
+    }
+
+    #[test]
+    fn every_catalog_line_builds_a_request_on_its_pinned_host() {
+        for p in catalog().list() {
+            let host: String = {
+                let mut out = String::new();
+                let mut rest = p.base_url.as_str();
+                while let Some(open) = rest.find('{') {
+                    out.push_str(&rest[..open]);
+                    out.push_str("acme");
+                    rest = rest[open..].split_once('}').map_or("", |(_, tail)| tail);
+                }
+                out.push_str(rest);
+                out
+            };
+            let mut static_headers = BTreeMap::new();
+            for h in p.connection_headers.iter().filter(|h| h.required) {
+                static_headers.insert(h.name.clone(), "sample".to_string());
+            }
+            let overrides = PresetOverrides { base_url: Some(host.clone()), static_headers, ..Default::default() };
+            let inst = p.instantiate_with("conn", "sec", &overrides);
+            let secret: &[u8] = match &p.auth {
+                AuthScheme::Pair { .. } | AuthScheme::Basic { key_as_username: false } => b"first-sample:second-sample",
+                _ => b"sample-secret-value",
+            };
+            for cap in &inst.capabilities {
+                let spec = cap.http.as_ref().unwrap();
+                assert!(crate::connectors::method_override_refusal(spec).is_none(), "{}", cap.id);
+                let req = crate::connectors::build_request_for(&p.id, cap, &sample_params(spec), secret).unwrap_or_else(|r| panic!("{}: {}", cap.id, r.reason));
+                assert!(req.url.starts_with(&host), "{}: {}", cap.id, req.url);
+                assert!(!req.url.contains('{'), "{}: {}", cap.id, req.url);
             }
         }
     }
@@ -694,9 +905,9 @@ mod tests {
         for p in catalog().list() {
             for h in &p.connection_headers {
                 assert!(!h.name.eq_ignore_ascii_case("authorization") && !h.label.is_empty() && !h.description.is_empty(), "{}: {}", p.id, h.name);
-                assert!(p.oauth.is_some(), "{}: a declared header rides beside a sealed OAuth token, never in place of a credential", p.id);
+                assert!(!p.auth.credential_field_names().contains(&h.name.to_ascii_lowercase()), "{}: {} is where the sealed credential travels, so it is never asked for in the clear", p.id, h.name);
             }
-            if !["google-ads", "microsoft-ads", "microsoft-ads-reporting"].contains(&p.id.as_str()) {
+            if !["google-ads", "microsoft-ads", "microsoft-ads-reporting", "pagerduty", "tavily", "wix"].contains(&p.id.as_str()) {
                 assert!(p.connection_headers.is_empty(), "{}", p.id);
             }
         }

@@ -46,7 +46,7 @@ pub use command::{
 };
 pub use connector::{
     build_command, build_request, build_request_for, canonical_agent_params, canonicalize_agent_params, compile_path_pattern, graphql_check, is_generic_http_connector,
-    json_text, project_response, request_refusal, response_alias_room, response_needs_projection, response_redact_keys, takes_agent_url, AuthScheme, BodyStyle, BraintreeConnector,
+    credential_pair, for_oauth_token, CredentialLocation, CredentialSlot, json_text, project_response, request_refusal, response_alias_room, response_needs_projection, response_redact_keys, takes_agent_url, AuthScheme, BodyStyle, BraintreeConnector,
     Capability, CapabilityKind, CommandSpec, Connector, ConnectorRegistry, FalConnector, GenericHttpConnector, GitHubConnector, GraphqlCheck,
     GraphqlOperation, GraphqlSpec, HttpSpec, PathPattern, QueryStyle, RequestRefusal, ResponseRedaction, VercelCliConnector, VercelConnector, MAX_ENCODED_PARAMS_BYTES,
     MAX_RESPONSE_ALIASES, UNCHARGED_ALIAS_ROOM, family_hosts, is_method_override_header, is_method_override_param, method_override_refusal, on_family_host,

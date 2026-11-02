@@ -63,8 +63,22 @@ async fn the_landing_page_links_a_console() {
 async fn the_landing_page_names_no_version_or_build() {
     let a = get(common::seeded(), "/", Some(BROWSER)).await;
     let version = env!("CARGO_PKG_VERSION");
-    assert!(!a.body.contains(version), "the landing page prints the version:\n{}", a.body);
+    let body = without_path_data(&a.body);
+    assert!(!body.contains(version), "the landing page prints the version:\n{body}");
     assert!(!a.body.to_lowercase().contains("build"), "{}", a.body);
+}
+
+/// The mark's path data is a run of decimals that can spell a version by chance, as `1.4.7` did.
+fn without_path_data(html: &str) -> String {
+    let mut out = String::new();
+    let mut rest = html;
+    while let Some(start) = rest.find(" d=\"") {
+        out.push_str(&rest[..start]);
+        let after = &rest[start + 4..];
+        rest = after.find('"').map_or("", |end| &after[end + 1..]);
+    }
+    out.push_str(rest);
+    out
 }
 
 /// The mark turns. The page's whole job is to read as a machine that is working, and a still logo on

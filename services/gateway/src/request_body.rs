@@ -194,6 +194,13 @@ enum AuthSchemeReq {
         #[serde(default)]
         prefix: String,
     },
+    Pair {
+        first: crate::connectors::CredentialSlot,
+        second: crate::connectors::CredentialSlot,
+    },
+    PathToken {
+        prefix: String,
+    },
 }
 
 impl From<AuthSchemeReq> for crate::connectors::AuthScheme {
@@ -205,6 +212,8 @@ impl From<AuthSchemeReq> for crate::connectors::AuthScheme {
             AuthSchemeReq::ApiKeyHeader { header } => AuthScheme::ApiKeyHeader { header },
             AuthSchemeReq::ApiKeyQuery { param } => AuthScheme::ApiKeyQuery { param },
             AuthSchemeReq::Raw { header, prefix } => AuthScheme::Raw { header, prefix },
+            AuthSchemeReq::Pair { first, second } => AuthScheme::Pair { first, second },
+            AuthSchemeReq::PathToken { prefix } => AuthScheme::PathToken { prefix },
         }
     }
 }
@@ -379,10 +388,15 @@ mod tests {
             AuthScheme::ApiKeyHeader { header: "X-Api-Key".into() },
             AuthScheme::ApiKeyQuery { param: "api_key".into() },
             AuthScheme::Raw { header: "Authorization".into(), prefix: "Token ".into() },
+            AuthScheme::Pair {
+                first: crate::connectors::CredentialSlot { location: crate::connectors::CredentialLocation::Header, name: "DD-API-KEY".into() },
+                second: crate::connectors::CredentialSlot { location: crate::connectors::CredentialLocation::Query, name: "token".into() },
+            },
+            AuthScheme::PathToken { prefix: "/bot".into() },
         ];
         for scheme in &every {
             match scheme {
-                AuthScheme::Bearer | AuthScheme::Basic { .. } | AuthScheme::ApiKeyHeader { .. } | AuthScheme::ApiKeyQuery { .. } | AuthScheme::Raw { .. } => {}
+                AuthScheme::Bearer | AuthScheme::Basic { .. } | AuthScheme::ApiKeyHeader { .. } | AuthScheme::ApiKeyQuery { .. } | AuthScheme::Raw { .. } | AuthScheme::Pair { .. } | AuthScheme::PathToken { .. } => {}
             }
         }
         every.to_vec()

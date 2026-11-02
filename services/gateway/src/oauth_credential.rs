@@ -58,12 +58,21 @@ pub enum RefreshGrant {
     RefreshToken,
     /// `grant_type=fb_exchange_token` with the current access token, which must still be valid.
     ExchangeToken,
+    /// `grant_type=client_credentials` with the client id and secret, for a vendor with no consent screen.
+    ClientCredentials,
+    /// A vendor that issues a long-lived token and no refresh token, such as a non-expiring OAuth token. A refresh token it issues anyway is still used.
+    None,
 }
 
 impl RefreshGrant {
     /// Whether this grant renews the credential without a refresh token.
     pub fn renews_without_refresh_token(self) -> bool {
-        self == RefreshGrant::ExchangeToken
+        matches!(self, RefreshGrant::ExchangeToken | RefreshGrant::ClientCredentials)
+    }
+
+    /// Whether a code exchange that returns no refresh token still leaves a working connection.
+    pub fn stands_without_refresh_token(self) -> bool {
+        matches!(self, RefreshGrant::ExchangeToken | RefreshGrant::ClientCredentials | RefreshGrant::None)
     }
 }
 
@@ -112,6 +121,9 @@ pub struct OAuthCredential {
     /// Which grant keeps the access token alive. A bundle sealed before the field existed refreshes with its refresh token.
     #[serde(default)]
     pub refresh_grant: RefreshGrant,
+    /// The vendor's own name for `client_id` at `token_url`, when it has one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub client_id_param: Option<String>,
 }
 
 impl std::fmt::Debug for OAuthCredential {
@@ -127,6 +139,7 @@ impl std::fmt::Debug for OAuthCredential {
             .field("client_secret", &self.client_secret.is_some())
             .field("token_auth", &self.token_auth)
             .field("refresh_grant", &self.refresh_grant)
+            .field("client_id_param", &self.client_id_param)
             .finish_non_exhaustive()
     }
 }
@@ -137,7 +150,7 @@ impl OAuthCredential {
     pub fn needs_refresh(&self, now_ms: i64, skew_ms: i64) -> bool {
         let skew_ms = match self.refresh_grant {
             RefreshGrant::ExchangeToken => skew_ms.max(EXCHANGE_RENEWAL_WINDOW_MS),
-            RefreshGrant::RefreshToken => skew_ms,
+            RefreshGrant::RefreshToken | RefreshGrant::ClientCredentials | RefreshGrant::None => skew_ms,
         };
         self.expires_at != 0 && now_ms.saturating_add(skew_ms) >= self.expires_at
     }
@@ -152,7 +165,7 @@ impl OAuthCredential {
     fn refresh_form(&self) -> std::collections::BTreeMap<String, String> {
         let mut params = std::collections::BTreeMap::new();
         match self.refresh_grant {
-            RefreshGrant::RefreshToken => {
+            RefreshGrant::RefreshToken | RefreshGrant::None => {
                 let refresh_token = self.refresh_token.as_ref().expect("is_locally_refreshable checked Some");
                 params.insert("grant_type".to_string(), "refresh_token".to_string());
                 params.insert("refresh_token".to_string(), refresh_token.expose().to_string());
@@ -160,6 +173,12 @@ impl OAuthCredential {
             RefreshGrant::ExchangeToken => {
                 params.insert("grant_type".to_string(), "fb_exchange_token".to_string());
                 params.insert("fb_exchange_token".to_string(), self.access_token.expose().to_string());
+            }
+            RefreshGrant::ClientCredentials => {
+                params.insert("grant_type".to_string(), "client_credentials".to_string());
+                if !self.scopes.is_empty() {
+                    params.insert("scope".to_string(), self.scopes.join(" "));
+                }
             }
         }
         params
@@ -172,7 +191,19 @@ impl OAuthCredential {
 /// which leaves the ids and secrets providers actually issue unchanged.
 pub fn token_request(
     token_url: &str,
+    form: std::collections::BTreeMap<String, String>,
+    client_id: Option<&str>,
+    client_secret: Option<&SecretString>,
+    token_auth: TokenAuth,
+) -> HttpRequest {
+    token_request_named(token_url, form, "client_id", client_id, client_secret, token_auth)
+}
+
+/// [`token_request`] for a vendor that calls `client_id` something else in the form, such as TikTok's `client_key`.
+pub fn token_request_named(
+    token_url: &str,
     mut form: std::collections::BTreeMap<String, String>,
+    client_id_param: &str,
     client_id: Option<&str>,
     client_secret: Option<&SecretString>,
     token_auth: TokenAuth,
@@ -181,7 +212,7 @@ pub fn token_request(
     let req = match token_auth {
         TokenAuth::Body => {
             if let Some(cid) = client_id {
-                form.insert("client_id".to_string(), cid.to_string());
+                form.insert(client_id_param.to_string(), cid.to_string());
             }
             if let Some(sec) = client_secret {
                 form.insert("client_secret".to_string(), sec.expose().to_string());
@@ -243,9 +274,10 @@ pub async fn ensure_fresh(
     if !cred.needs_refresh(now_ms, skew_ms) || !cred.is_locally_refreshable() {
         return Ok((cred.access_token.clone(), None));
     }
-    let req = token_request(
+    let req = token_request_named(
         &cred.token_url,
         cred.refresh_form(),
+        cred.client_id_param.as_deref().unwrap_or("client_id"),
         cred.client_id.as_deref(),
         cred.client_secret.as_ref(),
         cred.token_auth,
@@ -303,7 +335,60 @@ mod tests {
             client_secret: Some("csec".into()),
             token_auth: TokenAuth::Body,
             refresh_grant: RefreshGrant::RefreshToken,
+            client_id_param: None,
         }
+    }
+
+    #[tokio::test]
+    async fn a_client_credentials_bundle_renews_with_its_id_and_secret_and_no_refresh_token() {
+        let http = MockHttpClient::new();
+        http.push_response(HttpResponse::json(200, serde_json::json!({ "access_token": "fresh", "token_type": "Bearer", "expires_in": 32400 })));
+        let mut c = cred(1_000, None, OAuthLayer::ByoApp);
+        c.refresh_grant = RefreshGrant::ClientCredentials;
+        c.scopes = vec!["a".into(), "b".into()];
+        assert!(c.is_locally_refreshable());
+        let (tok, updated) = ensure_fresh(&c, &http, 1_000_000, 60_000).await.unwrap();
+        assert_eq!(tok, "fresh");
+        let updated = updated.expect("credential changed");
+        assert_eq!(updated.expires_at, 1_000_000 + 32_400_000);
+        assert_eq!(updated.refresh_grant, RefreshGrant::ClientCredentials);
+        let form = http.last_request().unwrap().form.clone().unwrap_or_default();
+        assert_eq!(form.get("grant_type").map(String::as_str), Some("client_credentials"));
+        assert_eq!(form.get("scope").map(String::as_str), Some("a b"));
+        assert_eq!(form.get("client_id").map(String::as_str), Some("cid"));
+        assert!(!form.contains_key("refresh_token"));
+    }
+
+    #[tokio::test]
+    async fn a_non_expiring_grant_is_left_alone_and_uses_a_refresh_token_if_the_vendor_issued_one() {
+        let http = MockHttpClient::new();
+        let mut c = cred(0, None, OAuthLayer::ByoApp);
+        c.refresh_grant = RefreshGrant::None;
+        assert!(!c.is_locally_refreshable());
+        let (tok, updated) = ensure_fresh(&c, &http, 1_000_000, 60_000).await.unwrap();
+        assert_eq!(tok, "old_access");
+        assert!(updated.is_none());
+        assert!(http.last_request().is_none(), "nothing to renew, so nothing is sent");
+
+        http.push_response(HttpResponse::json(200, serde_json::json!({ "access_token": "new", "expires_in": 3600 })));
+        let mut with_refresh = cred(1_000, Some("rt"), OAuthLayer::ByoApp);
+        with_refresh.refresh_grant = RefreshGrant::None;
+        let (tok, _) = ensure_fresh(&with_refresh, &http, 1_000_000, 60_000).await.unwrap();
+        assert_eq!(tok, "new");
+        let form = http.last_request().unwrap().form.clone().unwrap_or_default();
+        assert_eq!(form.get("grant_type").map(String::as_str), Some("refresh_token"));
+    }
+
+    #[tokio::test]
+    async fn a_vendors_own_name_for_client_id_is_used_on_refresh() {
+        let http = MockHttpClient::new();
+        http.push_response(HttpResponse::json(200, serde_json::json!({ "access_token": "new", "refresh_token": "rt2", "expires_in": 86400 })));
+        let mut c = cred(1_000, Some("rt"), OAuthLayer::ByoApp);
+        c.client_id_param = Some("client_key".into());
+        ensure_fresh(&c, &http, 1_000_000, 60_000).await.unwrap();
+        let form = http.last_request().unwrap().form.clone().unwrap_or_default();
+        assert_eq!(form.get("client_key").map(String::as_str), Some("cid"));
+        assert!(!form.contains_key("client_id"));
     }
 
     #[tokio::test]

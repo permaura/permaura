@@ -95,6 +95,38 @@ pub enum AuthScheme {
         #[serde(default)]
         prefix: String,
     },
+    /// Two values the upstream reads separately, sealed together as `first:second`: Datadog's API and application keys, Trello's key and token.
+    Pair {
+        /// Where the text before the first colon goes.
+        first: CredentialSlot,
+        /// Where the text after the first colon goes.
+        second: CredentialSlot,
+    },
+    /// The secret as part of the URL path, between the base URL and the capability's path: Telegram's `/bot<token>/getMe`.
+    PathToken {
+        /// The literal path text placed before the secret, such as `/bot`.
+        prefix: String,
+    },
+}
+
+/// Where one half of an [`AuthScheme::Pair`] travels.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CredentialSlot {
+    /// A header or a query parameter.
+    #[serde(rename = "in")]
+    pub location: CredentialLocation,
+    /// The header or parameter name.
+    pub name: String,
+}
+
+/// The two places a pair's value can travel.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CredentialLocation {
+    /// A request header.
+    Header,
+    /// A query-string parameter, appended after the agent's own.
+    Query,
 }
 
 impl AuthScheme {
@@ -103,11 +135,49 @@ impl AuthScheme {
     /// `Authorization`, which is a default redaction already, so they add nothing.
     pub fn credential_field_names(&self) -> Vec<String> {
         match self {
-            AuthScheme::Bearer | AuthScheme::Basic { .. } => Vec::new(),
+            AuthScheme::Bearer | AuthScheme::Basic { .. } | AuthScheme::PathToken { .. } => Vec::new(),
             AuthScheme::ApiKeyHeader { header } | AuthScheme::Raw { header, .. } => field_spellings(header),
             AuthScheme::ApiKeyQuery { param } => field_spellings(param),
+            AuthScheme::Pair { first, second } => {
+                let mut names = field_spellings(&first.name);
+                names.extend(field_spellings(&second.name));
+                names
+            }
         }
     }
+
+    /// The headers this scheme writes the credential into, which an agent's header may never shadow or a method-override check may never miss.
+    fn credential_headers(&self) -> Vec<&str> {
+        match self {
+            AuthScheme::ApiKeyHeader { header } | AuthScheme::Raw { header, .. } => vec![header.as_str()],
+            AuthScheme::Pair { first, second } => [first, second]
+                .into_iter()
+                .filter(|slot| slot.location == CredentialLocation::Header)
+                .map(|slot| slot.name.as_str())
+                .collect(),
+            _ => Vec::new(),
+        }
+    }
+
+    /// The query parameters this scheme writes the credential into.
+    fn credential_params(&self) -> Vec<&str> {
+        match self {
+            AuthScheme::ApiKeyQuery { param } => vec![param.as_str()],
+            AuthScheme::Pair { first, second } => [first, second]
+                .into_iter()
+                .filter(|slot| slot.location == CredentialLocation::Query)
+                .map(|slot| slot.name.as_str())
+                .collect(),
+            _ => Vec::new(),
+        }
+    }
+}
+
+/// The halves of a pair's sealed `first:second`, or `None` when either is missing. Split on the first colon, so a second value may itself hold one.
+pub fn credential_pair(secret: &str) -> Option<(&str, &str)> {
+    let (first, second) = secret.split_once(':')?;
+    let (first, second) = (first.trim(), second.trim());
+    (!first.is_empty() && !second.is_empty()).then_some((first, second))
 }
 
 /// `name` lowercased, then with every `-` written as `_` and every `_` written as `-`: an upstream that
@@ -148,6 +218,12 @@ pub struct HttpSpec {
     /// blobs persisted before auth-scheme support deserialize unchanged.
     #[serde(default)]
     pub auth: AuthScheme,
+    /// How an OAuth access token is presented, where that differs from a pasted key's `auth`: Linear takes a key bare and a token as a Bearer, on the same host.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub oauth_auth: Option<AuthScheme>,
+    /// Path parameters that may hold `/` as data, sent percent-encoded inside their one segment: GitLab's `group/project` and `src/app.js`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub segment_params: Vec<String>,
     /// Headers pinned at import that the upstream always requires (e.g. `Stripe-Version`,
     /// `Notion-Version`, `anthropic-version`). Never agent-supplied.
     #[serde(default)]
@@ -394,6 +470,20 @@ pub fn build_request(
     build_request_for(cap.connector_id(), cap, params, secret)
 }
 
+/// This capability as it runs with an OAuth access token rather than a pasted key: the same, unless its spec names another scheme for tokens.
+pub fn for_oauth_token(cap: &Capability) -> std::borrow::Cow<'_, Capability> {
+    match cap.http.as_ref().and_then(|spec| spec.oauth_auth.clone()) {
+        Some(scheme) => {
+            let mut token_cap = cap.clone();
+            if let Some(spec) = token_cap.http.as_mut() {
+                spec.auth = scheme;
+            }
+            std::borrow::Cow::Owned(token_cap)
+        }
+        None => std::borrow::Cow::Borrowed(cap),
+    }
+}
+
 /// [`build_request`] for a capability on a connection of the `connector` family (the connection's
 /// `connector` field). A capability created through a connection is namespaced by the connection id
 /// (`github-work.repos.read`), so its own id no longer names the family that shapes its request.
@@ -458,6 +548,11 @@ fn credential_value(prefix: &str, token: &str) -> String {
     value.push_str(prefix);
     value.push_str(token);
     value
+}
+
+/// Whether a credential can sit in a URL path as it is: no percent-encoding is applied, because Telegram's token holds a colon its router reads literally, so anything a path would read as a separator is refused instead.
+fn path_safe_credential(token: &str) -> bool {
+    !token.contains("..") && token.bytes().all(|b| b.is_ascii_alphanumeric() || b":-_.~".contains(&b))
 }
 
 /// `Basic ` then base64 of `raw` (or of `raw` and a trailing colon), written straight into one string of exactly that length, so neither the raw pair nor its encoding exists anywhere else.
@@ -619,20 +714,12 @@ pub fn method_override_refusal(spec: &HttpSpec) -> Option<String> {
     if spec.path.contains(['?', '#']) {
         return Some(format!("its path template '{}' carries a query or a fragment, which the gateway does not send as part of a path", excerpt(&spec.path)));
     }
-    let credential_header = match &spec.auth {
-        AuthScheme::ApiKeyHeader { header } | AuthScheme::Raw { header, .. } => Some(header.as_str()),
-        _ => None,
-    };
-    let mut headers = spec.static_headers.keys().chain(&spec.header_params).map(String::as_str).chain(credential_header);
+    let mut headers = spec.static_headers.keys().chain(&spec.header_params).map(String::as_str).chain(spec.auth.credential_headers()).chain(spec.oauth_auth.iter().flat_map(AuthScheme::credential_headers));
     if let Some(name) = headers.find(|n| is_method_override_header(n)) {
         return Some(format!("it sends the header '{name}', which asks the upstream to run the request as another method than its pinned {}", spec.method.as_str()));
     }
-    let credential_param = match &spec.auth {
-        AuthScheme::ApiKeyQuery { param } => Some(param.as_str()),
-        _ => None,
-    };
     let mut named =
-        spec.query_params.iter().chain(&spec.body_params).chain(&spec.path_params).map(String::as_str).chain(spec.route_param.as_deref()).chain(credential_param);
+        spec.query_params.iter().chain(&spec.body_params).chain(&spec.path_params).map(String::as_str).chain(spec.route_param.as_deref()).chain(spec.auth.credential_params()).chain(spec.oauth_auth.iter().flat_map(AuthScheme::credential_params));
     if let Some(name) = named.find(|n| is_method_override_param(n)) {
         return Some(format!("it sends the parameter '{name}', which asks the upstream to run the request as another method than its pinned {}", spec.method.as_str()));
     }
@@ -710,7 +797,7 @@ fn build_imported_http(
         let filled = match spec.path_patterns.get(name) {
             Some(own) => fill_by_pattern(name, &raw, own)?,
             // No PHP decodes an OpenAPI path before routing it, so a '/' stays data inside its one segment as %2F, which is how an API like GitLab addresses group/project.
-            None if connector == "openapi" && spec.route_param.is_none() => fill_one_segment(name, &raw)?,
+            None if (connector == "openapi" && spec.route_param.is_none()) || spec.segment_params.iter().any(|p| p == name) => fill_one_segment(name, &raw)?,
             // A `rest_route` value is decoded by PHP before WordPress routes it, so an encoded separator becomes a real one there.
             None if crosses_a_segment(&raw) => {
                 let reason = if connector == "wordpress" && !spec.route_patterns_read && spec.path_patterns.is_empty() {
@@ -742,14 +829,31 @@ fn build_imported_http(
             push_pair(&mut query, &mut left, &percent_encode(param), &encode_route(&path))?;
             format!("{base}/")
         }
-        None => format!("{base}{path}"),
+        None => match &spec.auth {
+            AuthScheme::PathToken { prefix } => {
+                // An empty token is the pre-flight check, which judges the request before any credential is opened.
+                if !token.is_empty() && !path_safe_credential(token) {
+                    return Err(RequestRefusal::new("credential_shape", "This connection's credential cannot be placed in a URL path: it holds a character the path would read as a separator."));
+                }
+                format!("{base}{prefix}{token}{path}")
+            }
+            _ => format!("{base}{path}"),
+        },
     };
     pinned_to_base(&url, base)?;
 
     for name in &spec.query_params {
         if let Some(v) = params.get(name) {
             match spec.query_style {
-                QueryStyle::Flat => push_raw_pair(&mut query, &mut left, &percent_encode(name), &json_value_to_string(v), true)?,
+                // An array repeats the name, the common form for an API that takes several values: an empty value here could read as no filter at all.
+                QueryStyle::Flat => match v {
+                    serde_json::Value::Array(items) => {
+                        for item in items {
+                            push_raw_pair(&mut query, &mut left, &percent_encode(name), &json_value_to_string(item), true)?;
+                        }
+                    }
+                    _ => push_raw_pair(&mut query, &mut left, &percent_encode(name), &json_value_to_string(v), true)?,
+                },
                 QueryStyle::Brackets => push_bracketed(&mut query, &mut left, &mut percent_encode(name), v, true)?,
             }
         }
@@ -762,6 +866,21 @@ fn build_imported_http(
         query.reserve(1 + name.len() + 1 + percent_encoded_len(token));
         let mut unbounded = usize::MAX;
         push_raw_pair(&mut query, &mut unbounded, &name, token, true)?;
+    }
+    let pair = match &spec.auth {
+        AuthScheme::Pair { first, second } if !token.is_empty() => {
+            let Some((first_value, second_value)) = credential_pair(token) else {
+                return Err(RequestRefusal::new("credential_shape", "This connection's credential must be two values joined by a colon, first:second."));
+            };
+            Some([(first, first_value), (second, second_value)])
+        }
+        _ => None,
+    };
+    for (slot, value) in pair.iter().flatten().filter(|(slot, _)| slot.location == CredentialLocation::Query) {
+        let name = percent_encode(&slot.name);
+        query.reserve(1 + name.len() + 1 + percent_encoded_len(value));
+        let mut unbounded = usize::MAX;
+        push_raw_pair(&mut query, &mut unbounded, &name, value, true)?;
     }
     if !query.is_empty() {
         let mut full = String::with_capacity(url.len() + 1 + query.len());
@@ -813,6 +932,12 @@ fn build_imported_http(
         AuthScheme::Raw { header, prefix } => {
             headers.insert(header.clone(), credential_value(prefix, token));
         }
+        AuthScheme::Pair { .. } => {
+            for (slot, value) in pair.iter().flatten().filter(|(slot, _)| slot.location == CredentialLocation::Header) {
+                headers.insert(slot.name.clone(), credential_value("", value));
+            }
+        }
+        AuthScheme::PathToken { .. } => {} // placed in the URL path above
     }
     if body.is_some() {
         headers.entry("Content-Type".to_string()).or_insert_with(|| "application/json".to_string());
@@ -4192,5 +4317,97 @@ mod tests {
         let plain = mapped(serde_json::json!({ "url": "https://api.probe.test/search?query=w%3A%20secret%20things" }));
         assert_eq!(plain, keys, "a search term that does not read as GraphQL is left alone: {plain:?}");
         assert_eq!(mapped(serde_json::json!({ "url": "https://api.probe.test/graphql?query=%7B%20id%20%7D" })), keys);
+    }
+
+    #[test]
+    fn a_segment_param_carries_a_slash_as_data_and_nothing_that_would_move_the_route() {
+        let spec = HttpSpec { method: HttpMethod::Get, base_url: "https://gitlab.com/api/v4".into(), path: "/projects/{id}/repository/files/{file_path}".into(), path_params: vec!["id".into(), "file_path".into()], segment_params: vec!["id".into(), "file_path".into()], ..HttpSpec::default() };
+        let cap = imported(spec.clone());
+        let req = build_request(&cap, &serde_json::json!({ "id": "group/project", "file_path": "src/app.js" }), b"glpat").unwrap();
+        assert_eq!(req.url, "https://gitlab.com/api/v4/projects/group%2Fproject/repository/files/src%2Fapp.js");
+        for bad in ["../admin", "a/../b", "a/./b", "a%2Fb", "a\\b"] {
+            assert!(build_request(&cap, &serde_json::json!({ "id": bad, "file_path": "x" }), b"glpat").is_err(), "{bad}");
+        }
+        let plain = imported(HttpSpec { segment_params: Vec::new(), ..spec });
+        assert!(build_request(&plain, &serde_json::json!({ "id": "group/project", "file_path": "x" }), b"glpat").is_err(), "a line that does not name it keeps the one-segment rule");
+    }
+
+    #[test]
+    fn an_array_query_value_repeats_its_name() {
+        let cap = imported(HttpSpec { method: HttpMethod::Get, base_url: "https://api.example.test".into(), path: "/incidents".into(), query_params: vec!["statuses[]".into(), "limit".into()], ..HttpSpec::default() });
+        let req = build_request(&cap, &serde_json::json!({ "statuses[]": ["triggered", "acknowledged"], "limit": 5 }), b"k").unwrap();
+        assert_eq!(req.url, "https://api.example.test/incidents?statuses%5B%5D=triggered&statuses%5B%5D=acknowledged&limit=5");
+        let none = build_request(&cap, &serde_json::json!({ "statuses[]": [] }), b"k").unwrap();
+        assert_eq!(none.url, "https://api.example.test/incidents", "an empty array sends nothing rather than an empty filter");
+    }
+
+    fn slot(location: CredentialLocation, name: &str) -> CredentialSlot {
+        CredentialSlot { location, name: name.into() }
+    }
+
+    #[test]
+    fn a_pair_sends_each_half_where_its_slot_says_and_refuses_a_value_without_both() {
+        let headers = AuthScheme::Pair { first: slot(CredentialLocation::Header, "DD-API-KEY"), second: slot(CredentialLocation::Header, "DD-APPLICATION-KEY") };
+        let cap = imported(HttpSpec { method: HttpMethod::Get, base_url: "https://api.datadoghq.com/api/v1".into(), path: "/monitor".into(), auth: headers.clone(), ..HttpSpec::default() });
+        let req = build_request(&cap, &serde_json::json!({}), b"api-key-value:app-key-value").unwrap();
+        assert_eq!(req.url, "https://api.datadoghq.com/api/v1/monitor");
+        assert_eq!(req.headers.get("DD-API-KEY").map(String::as_str), Some("api-key-value"));
+        assert_eq!(req.headers.get("DD-APPLICATION-KEY").map(String::as_str), Some("app-key-value"));
+        assert!(!req.headers.contains_key("Authorization"));
+        for bad in [&b"no-colon"[..], b":second-only", b"first-only:"] {
+            let refused = build_request(&cap, &serde_json::json!({}), bad).unwrap_err();
+            assert_eq!(refused.code, "credential_shape", "{bad:?}");
+            assert!(!refused.reason.contains("first-only") && !refused.reason.contains("second-only"), "a refusal never echoes the credential");
+        }
+
+        let query = AuthScheme::Pair { first: slot(CredentialLocation::Query, "key"), second: slot(CredentialLocation::Query, "token") };
+        let cap = imported(HttpSpec { method: HttpMethod::Get, base_url: "https://api.trello.com/1".into(), path: "/members/me".into(), query_params: vec!["key".into(), "fields".into()], auth: query.clone(), ..HttpSpec::default() });
+        let req = build_request(&cap, &serde_json::json!({ "fields": "id", "key": "agent-supplied" }), b"the-key:the-token").unwrap();
+        assert!(req.url.ends_with("&key=the-key&token=the-token"), "the credential goes last, after anything an agent sent: {}", req.url);
+
+        assert_eq!(headers.credential_field_names(), vec!["dd-api-key", "dd_api_key", "dd-application-key", "dd_application_key"]);
+        assert_eq!(query.credential_field_names(), vec!["key", "token"]);
+    }
+
+    #[test]
+    fn a_pair_on_a_method_override_name_is_refused_before_the_credential_is_attached() {
+        let auth = AuthScheme::Pair { first: slot(CredentialLocation::Header, "X-HTTP-Method-Override"), second: slot(CredentialLocation::Query, "token") };
+        let spec = HttpSpec { path: "/x".into(), auth, ..HttpSpec::default() };
+        assert!(method_override_refusal(&spec).is_some());
+        let auth = AuthScheme::Pair { first: slot(CredentialLocation::Header, "X-Key"), second: slot(CredentialLocation::Query, "_method") };
+        assert!(method_override_refusal(&HttpSpec { path: "/x".into(), auth, ..HttpSpec::default() }).is_some());
+        let oauth_auth = Some(AuthScheme::ApiKeyHeader { header: "X-HTTP-Method-Override".into() });
+        assert!(method_override_refusal(&HttpSpec { path: "/x".into(), oauth_auth, ..HttpSpec::default() }).is_some(), "a token's scheme is held to the same rule");
+    }
+
+    #[test]
+    fn a_path_token_sits_between_the_base_and_the_path_and_refuses_what_would_change_the_route() {
+        let cap = imported(HttpSpec { method: HttpMethod::Get, base_url: "https://api.telegram.org".into(), path: "/getChat".into(), query_params: vec!["chat_id".into()], auth: AuthScheme::PathToken { prefix: "/bot".into() }, ..HttpSpec::default() });
+        let req = build_request(&cap, &serde_json::json!({ "chat_id": 7 }), b"123456:ABC-def_1.2~").unwrap();
+        assert_eq!(req.url, "https://api.telegram.org/bot123456:ABC-def_1.2~/getChat?chat_id=7", "the colon stays literal");
+        assert!(!req.headers.contains_key("Authorization"));
+        assert!(AuthScheme::PathToken { prefix: "/bot".into() }.credential_field_names().is_empty());
+        for bad in [&b"../../admin"[..], b"a/b", b"a?b=c", b"a#b", b"a b", b"a%2Fb", b".."] {
+            let refused = build_request(&cap, &serde_json::json!({}), bad).unwrap_err();
+            assert_eq!(refused.code, "credential_shape", "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn an_oauth_token_runs_on_its_own_scheme_when_the_spec_names_one() {
+        let key_scheme = AuthScheme::Raw { header: "Authorization".into(), prefix: String::new() };
+        let spec = HttpSpec { method: HttpMethod::Get, base_url: "https://api.linear.app".into(), path: "/graphql".into(), auth: key_scheme.clone(), oauth_auth: Some(AuthScheme::Bearer), ..HttpSpec::default() };
+        let cap = imported(spec);
+        assert_eq!(build_request(&cap, &serde_json::json!({}), b"lin_api_x").unwrap().headers.get("Authorization").map(String::as_str), Some("lin_api_x"));
+        assert_eq!(build_request(&for_oauth_token(&cap), &serde_json::json!({}), b"lin_oauth_x").unwrap().headers.get("Authorization").map(String::as_str), Some("Bearer lin_oauth_x"));
+
+        let same = imported(HttpSpec { method: HttpMethod::Get, base_url: "https://api.example.test".into(), path: "/x".into(), auth: key_scheme, ..HttpSpec::default() });
+        assert!(matches!(for_oauth_token(&same), std::borrow::Cow::Borrowed(_)), "no second scheme, nothing to clone");
+    }
+
+    #[test]
+    fn a_spec_with_no_token_scheme_serializes_as_it_did_before_the_field_existed() {
+        let spec = HttpSpec { method: HttpMethod::Get, base_url: "https://a.test".into(), path: "/x".into(), ..HttpSpec::default() };
+        assert!(!serde_json::to_string(&spec).unwrap().contains("oauth_auth"));
     }
 }

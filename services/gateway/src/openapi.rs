@@ -527,6 +527,14 @@ fn check_auth(auth: &AuthScheme) -> Result<(), String> {
             Err("auth prefix must not contain CR or LF".into())
         }
         AuthScheme::ApiKeyQuery { param } if param.trim().is_empty() => Err("auth param must not be empty".into()),
+        AuthScheme::Pair { first, second } => [first, second].into_iter().try_for_each(|slot| match slot.location {
+            crate::connectors::CredentialLocation::Header if !credential_header_ok(&slot.name) => Err(format!("auth header '{}' cannot carry a credential", slot.name)),
+            crate::connectors::CredentialLocation::Query if slot.name.trim().is_empty() => Err("auth param must not be empty".to_string()),
+            _ => Ok(()),
+        }),
+        AuthScheme::PathToken { prefix } if !prefix.starts_with('/') || prefix.contains(['?', '#', '\r', '\n']) => {
+            Err("auth path prefix must start with / and hold no query, fragment or line break".into())
+        }
         _ => Ok(()),
     }
 }
@@ -537,7 +545,8 @@ fn credential_header(auth: &AuthScheme) -> Option<&str> {
     match auth {
         AuthScheme::Bearer | AuthScheme::Basic { .. } => Some("Authorization"),
         AuthScheme::ApiKeyHeader { header } | AuthScheme::Raw { header, .. } => Some(header),
-        AuthScheme::ApiKeyQuery { .. } => None,
+        AuthScheme::ApiKeyQuery { .. } | AuthScheme::PathToken { .. } => None,
+        AuthScheme::Pair { first, second } => [first, second].into_iter().find(|slot| slot.location == crate::connectors::CredentialLocation::Header).map(|slot| slot.name.as_str()),
     }
 }
 

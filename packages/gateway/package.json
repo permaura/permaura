@@ -1,6 +1,7 @@
 {
   "name": "permaura",
-  "version": "1.4.6",
+  "version": "1.4.7",
+  "mcpName": "com.permaura/gateway",
   "description": "Run the Permaura gateway with one command. Give your AI agents permission, not keys. `npm i -g permaura` then `permaura start --pair <code>` installs the gateway, starts it, and connects it to your permaura.com account.",
   "license": "Apache-2.0",
   "type": "module",
@@ -27,10 +28,18 @@
     "ai",
     "agents",
     "mcp",
+    "mcp-server",
     "gateway",
     "security",
     "capabilities",
-    "permissions"
+    "permissions",
+    "agent-permissions",
+    "tool-approvals",
+    "credential-broker",
+    "secrets",
+    "audit-log",
+    "claude-code-hooks",
+    "hitl"
   ],
   "publishConfig": {
     "access": "public"

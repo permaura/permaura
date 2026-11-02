@@ -27,7 +27,7 @@ use sha2::{Digest, Sha256};
 
 use crate::connectors::HttpClient;
 use crate::error::GatewayError;
-use crate::oauth_credential::{token_request, OAuthCredential, OAuthLayer, TokenAuth, RefreshGrant};
+use crate::oauth_credential::{token_request, token_request_named, OAuthCredential, OAuthLayer, TokenAuth, RefreshGrant};
 use crate::store::{Session, Store};
 
 /// How long an operator has to complete the browser dance before the pending authorization is swept.
@@ -102,6 +102,8 @@ pub struct PendingAuth {
     pub token_auth: TokenAuth,
     /// Which grant keeps the token alive afterwards, from the connector's manifest.
     pub refresh_grant: RefreshGrant,
+    /// The vendor's own name for `client_id`, from the connector's manifest.
+    pub client_id_param: Option<String>,
 }
 
 impl std::fmt::Debug for PendingAuth {
@@ -469,14 +471,36 @@ pub fn authorize_url(
     code_challenge: Option<&str>,
     extra: &BTreeMap<String, String>,
 ) -> String {
+    authorize_url_named(authorize_endpoint, "client_id", client_id, redirect_uri, scopes, state, code_challenge, extra)
+}
+
+/// [`authorize_url`] for a vendor that calls `client_id` something else, such as TikTok's `client_key`.
+#[allow(clippy::too_many_arguments)]
+pub fn authorize_url_named(
+    authorize_endpoint: &str,
+    client_id_param: &str,
+    client_id: &str,
+    redirect_uri: &str,
+    scopes: &[String],
+    state: &str,
+    code_challenge: Option<&str>,
+    extra: &BTreeMap<String, String>,
+) -> String {
     let mut url = format!(
-        "{}{}response_type=code&client_id={}&redirect_uri={}&state={}&access_type=offline&prompt=consent",
+        "{}{}response_type=code&{}={}&redirect_uri={}&state={}",
         authorize_endpoint,
         if authorize_endpoint.contains('?') { "&" } else { "?" },
+        pct(client_id_param),
         pct(client_id),
         pct(redirect_uri),
         pct(state),
     );
+    // A connector's own value replaces a default: Microsoft answers prompt=consent with an admin-approval error for anyone but a tenant admin where user consent is off.
+    for (name, default) in [("access_type", "offline"), ("prompt", "consent")] {
+        if !extra.contains_key(name) {
+            url.push_str(&format!("&{name}={default}"));
+        }
+    }
     if !scopes.is_empty() {
         url.push_str(&format!("&scope={}", pct(&scopes.join(" "))));
     }
@@ -522,9 +546,10 @@ pub async fn exchange_code(
         form.insert("code_verifier".to_string(), verifier.expose().to_string());
     }
 
-    let req = token_request(
+    let req = token_request_named(
         &pending.token_url,
         form,
+        pending.client_id_param.as_deref().unwrap_or("client_id"),
         Some(&pending.client_id),
         Some(&pending.client_secret),
         pending.token_auth,
@@ -557,7 +582,7 @@ pub async fn exchange_code(
 
     if pending.refresh_grant == RefreshGrant::ExchangeToken {
         token = exchange_for_long_lived(http, pending, token).await?;
-    } else if token.refresh_token.is_none() {
+    } else if token.refresh_token.is_none() && !pending.refresh_grant.stands_without_refresh_token() {
         return Err(GatewayError::BadRequest(
             "the provider returned no refresh token, so this connection would stop working when the \
              access token expires. Check the app is not in a testing/sandbox mode that withholds \
@@ -587,7 +612,53 @@ pub async fn exchange_code(
         client_secret: Some(pending.client_secret.clone()),
         token_auth: pending.token_auth,
         refresh_grant: pending.refresh_grant,
+        client_id_param: pending.client_id_param.clone(),
     })
+}
+
+/// What a client-credentials connector mints its tokens with, from the connector's manifest.
+pub struct ClientCredentialsGrant<'a> {
+    /// The connector id, recorded on the credential for display.
+    pub provider: &'a str,
+    /// The vendor's token endpoint, resolved to an absolute URL.
+    pub token_url: &'a str,
+    /// The scopes to ask for, if the vendor takes any.
+    pub scopes: &'a [String],
+    /// How the endpoint takes the client id and secret.
+    pub token_auth: TokenAuth,
+}
+
+/// Turn a pasted `client_id:client_secret` into the sealed bundle a client-credentials connection runs on: mint the first token now, so a wrong pair is refused where the operator can see why rather than on an agent's first call.
+pub async fn mint_client_credentials(
+    http: &dyn HttpClient,
+    grant: ClientCredentialsGrant<'_>,
+    pasted: &str,
+    now_ms: i64,
+) -> Result<OAuthCredential, GatewayError> {
+    let Some((client_id, client_secret)) = crate::connectors::credential_pair(pasted) else {
+        return Err(GatewayError::BadRequest(format!("{} takes its credential as client_id:client_secret, joined by a colon", grant.provider)));
+    };
+    let unminted = OAuthCredential {
+        layer: OAuthLayer::ByoApp,
+        provider: grant.provider.to_string(),
+        access_token: String::new().into(),
+        refresh_token: None,
+        // Before any clock reading, so the first renewal below runs.
+        expires_at: -1,
+        scopes: grant.scopes.to_vec(),
+        token_url: grant.token_url.to_string(),
+        client_id: Some(client_id.to_string()),
+        client_secret: Some(SecretString::copied(client_secret)),
+        token_auth: grant.token_auth,
+        refresh_grant: RefreshGrant::ClientCredentials,
+        client_id_param: None,
+    };
+    match crate::oauth_credential::ensure_fresh(&unminted, http, now_ms, 0).await {
+        Ok((_, Some(minted))) => Ok(minted),
+        Ok((_, None)) => Err(GatewayError::Internal("client-credentials mint did not run".to_string())),
+        Err(GatewayError::Unauthorized(_)) => Err(GatewayError::BadRequest(format!("{} refused this client id and secret, so nothing was sealed. Check both, and that the app has API access.", grant.provider))),
+        Err(other) => Err(other),
+    }
 }
 
 /// Trade the short-lived token a Meta code exchange returns for the sixty-day one the credential keeps,
@@ -642,6 +713,7 @@ mod tests {
             binding: binding(&Arc::new(CredentialRevisions::default())),
             token_auth: TokenAuth::Body,
             refresh_grant: RefreshGrant::RefreshToken,
+            client_id_param: None,
         }
     }
 
@@ -806,6 +878,15 @@ mod tests {
         assert!(!url.contains("code_challenge"));
     }
 
+    #[test]
+    fn a_connectors_own_prompt_replaces_the_default_rather_than_joining_it() {
+        let extra = BTreeMap::from([("prompt".to_string(), "select_account".to_string())]);
+        let url = authorize_url("https://login.microsoftonline.com/common/oauth2/v2.0/authorize", "cid", "http://127.0.0.1:7376/oauth/callback", &["offline_access".to_string()], "st", None, &extra);
+        assert!(url.contains("prompt=select_account"), "got {url}");
+        assert!(!url.contains("prompt=consent"), "got {url}");
+        assert!(url.contains("access_type=offline"), "the other default stands: {url}");
+    }
+
     #[tokio::test]
     async fn basic_token_auth_exchanges_with_the_client_credentials_in_a_header() {
         let http = MockHttpClient::default();
@@ -824,6 +905,76 @@ mod tests {
         assert!(!form.contains_key("client_id") && !form.contains_key("client_secret"), "no client credential in the form: {form:?}");
         assert_eq!(form.get("code").map(String::as_str), Some("the-code"));
         assert_eq!(form.get("grant_type").map(String::as_str), Some("authorization_code"));
+    }
+
+    #[tokio::test]
+    async fn a_non_expiring_grant_seals_a_token_that_came_with_no_refresh_token() {
+        let http = MockHttpClient::default();
+        http.push_response(HttpResponse::json(200, serde_json::json!({ "access_token": "forever", "token_type": "bearer" })));
+        let mut p = pending();
+        p.refresh_grant = RefreshGrant::None;
+        let cred = exchange_code(&http, &p, "the-code", 5_000).await.unwrap();
+        assert_eq!(cred.access_token, "forever");
+        assert_eq!(cred.expires_at, 0, "no expiry named, so it is never refreshed");
+        assert!(cred.refresh_token.is_none());
+        assert_eq!(cred.refresh_grant, RefreshGrant::None);
+
+        let http = MockHttpClient::default();
+        http.push_response(HttpResponse::json(200, serde_json::json!({ "access_token": "at" })));
+        assert!(exchange_code(&http, &pending(), "code", 0).await.is_err(), "the default grant still refuses a token it could never renew");
+    }
+
+    #[tokio::test]
+    async fn a_vendors_own_name_for_client_id_is_used_on_both_endpoints() {
+        let url = authorize_url_named("https://www.tiktok.com/v2/auth/authorize/", "client_key", "ck", "http://127.0.0.1:7376/oauth/callback", &["user.info.basic,video.list".to_string()], "st", None, &BTreeMap::new());
+        assert!(url.contains("?response_type=code&client_key=ck&"), "got {url}");
+        assert!(!url.contains("client_id="), "got {url}");
+        assert!(url.contains("scope=user.info.basic%2Cvideo.list"), "a comma-joined scope list survives as one value: {url}");
+
+        let http = MockHttpClient::default();
+        http.push_response(HttpResponse::json(200, serde_json::json!({ "access_token": "at", "refresh_token": "rt", "expires_in": 86400 })));
+        let mut p = pending();
+        p.client_id_param = Some("client_key".into());
+        let cred = exchange_code(&http, &p, "the-code", 5_000).await.unwrap();
+        assert_eq!(cred.client_id_param.as_deref(), Some("client_key"), "a refresh years later uses the same name");
+        let form = http.last_request().unwrap().form.clone().unwrap_or_default();
+        assert_eq!(form.get("client_key").map(String::as_str), Some("cid"));
+        assert!(!form.contains_key("client_id"));
+    }
+
+    fn cc_grant<'a>(scopes: &'a [String]) -> ClientCredentialsGrant<'a> {
+        ClientCredentialsGrant { provider: "paypal", token_url: "https://api-m.paypal.com/v1/oauth2/token", scopes, token_auth: TokenAuth::Basic }
+    }
+
+    #[tokio::test]
+    async fn pasting_a_client_id_and_secret_mints_the_first_token_and_seals_a_bundle_that_renews_itself() {
+        let http = MockHttpClient::default();
+        http.push_response(HttpResponse::json(200, serde_json::json!({ "access_token": "A21", "token_type": "Bearer", "expires_in": 32400 })));
+        let cred = mint_client_credentials(&http, cc_grant(&[]), "the-id:the-secret", 5_000).await.unwrap();
+        assert_eq!(cred.access_token, "A21");
+        assert_eq!(cred.expires_at, 5_000 + 32_400_000);
+        assert_eq!(cred.refresh_grant, RefreshGrant::ClientCredentials);
+        assert_eq!(cred.client_id.as_deref(), Some("the-id"));
+        assert_eq!(cred.client_secret.as_ref().map(SecretString::expose), Some("the-secret"));
+        assert!(cred.is_locally_refreshable());
+        let sent = http.last_request().unwrap();
+        assert_eq!(sent.url, "https://api-m.paypal.com/v1/oauth2/token");
+        assert_eq!(sent.headers.get("Authorization").map(String::as_str), Some("Basic dGhlLWlkOnRoZS1zZWNyZXQ="));
+        assert_eq!(sent.form.clone().unwrap_or_default().get("grant_type").map(String::as_str), Some("client_credentials"));
+        let bundle = to_sealed_json(&cred).unwrap();
+        assert_eq!(from_sealed_bytes(bundle.as_bytes()).unwrap(), cred, "the bundle round-trips, so the invoke path finds a token");
+    }
+
+    #[tokio::test]
+    async fn a_wrong_pair_or_shape_seals_nothing_and_says_why_without_echoing_it() {
+        let http = MockHttpClient::default();
+        let shape = mint_client_credentials(&http, cc_grant(&[]), "no-colon-secret", 0).await.unwrap_err().to_string();
+        assert!(shape.contains("client_id:client_secret") && !shape.contains("no-colon-secret"), "got {shape}");
+        assert!(http.last_request().is_none(), "nothing is sent for a value of the wrong shape");
+
+        http.push_response(HttpResponse::json(401, serde_json::json!({ "error": "invalid_client" })));
+        let refused = mint_client_credentials(&http, cc_grant(&[]), "the-id:wrong-secret", 0).await.unwrap_err().to_string();
+        assert!(refused.contains("refused") && !refused.contains("wrong-secret"), "got {refused}");
     }
 
     #[test]
@@ -849,6 +1000,7 @@ mod tests {
             client_secret: Some("sec".into()),
             token_auth: TokenAuth::Basic,
             refresh_grant: RefreshGrant::RefreshToken,
+            client_id_param: None,
         };
         let json = to_sealed_json(&cred).unwrap();
         assert_eq!(from_sealed_bytes(json.as_bytes()).unwrap(), cred);

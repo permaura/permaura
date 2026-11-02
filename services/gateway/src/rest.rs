@@ -4513,6 +4513,8 @@ fn auth_label(a: &crate::connectors::AuthScheme) -> &'static str {
         ApiKeyHeader { .. } => "api-key (header)",
         ApiKeyQuery { .. } => "api-key (query)",
         Raw { .. } => "header token",
+        Pair { .. } => "key pair",
+        PathToken { .. } => "token in path",
     }
 }
 
@@ -4550,8 +4552,10 @@ fn preset_json(p: &crate::presets::Preset) -> serde_json::Value {
         // The connector advertises OAuth when it carries OAuth metadata; `oauth_pkce` says whether the
         // zero-knowledge "Permaura app" layer is possible. Whether the *Managed* (hosted) layer is
         // offered is a separate web-side availability flag, not encoded here.
-        "oauth_supported": p.oauth.is_some(),
+        // A client-credentials connector has no consent screen to send anyone to: it takes `client_id:client_secret` in the credential box.
+        "oauth_supported": p.oauth.as_ref().is_some_and(|o| o.grant == crate::presets::OAuthGrant::AuthorizationCode),
         "oauth_pkce": p.oauth.as_ref().map(|o| o.pkce).unwrap_or(false),
+        "credential": p.credential.as_ref().filter(|_| p.vouched),
         "wordpress": p.wordpress.as_ref().map(|w| json!({ "namespace": w.namespace })),
         // A WordPress preset's host is the operator's site and a templated `base_url` names none at all, so `from-preset` refuses either without the missing piece and the console must ask for it.
         "base_url_required": p.wordpress.is_some() || p.base_url.contains('{'),
@@ -6104,6 +6108,40 @@ fn hold_names_staged_row(store: &dyn Store, staging_secret_id: &str) -> Result<b
     Ok(store.pending_staging_owners()?.iter().any(|(id, _)| id == staging_secret_id))
 }
 
+/// Where a client-credentials connection mints its tokens.
+struct ClientCredentialsEndpoint {
+    token_url: String,
+    scopes: Vec<String>,
+    token_auth: crate::oauth_credential::TokenAuth,
+    accepts_token: bool,
+}
+
+/// The token endpoint for a connection whose bundled preset mints with client credentials, or `None` for every other connection, whose pasted value is sealed as it is. Only a connection made from the compiled catalog qualifies, because this endpoint is sent the client secret. A path resolves against the connection's own pinned host, for a vendor whose token endpoint is on each customer's host.
+fn client_credentials_endpoint(store: &dyn Store, connection: &permaura_core::Connection) -> Result<Option<ClientCredentialsEndpoint>, GatewayError> {
+    if !matches!(connection.made_from, Some(permaura_core::CatalogOrigin::BuiltIn)) {
+        return Ok(None);
+    }
+    let Some(oauth) = crate::presets::catalog().get(&connection.connector).and_then(|p| p.oauth.as_ref()) else {
+        return Ok(None);
+    };
+    if oauth.grant != crate::presets::OAuthGrant::ClientCredentials {
+        return Ok(None);
+    }
+    let token_url = if oauth.token_url.starts_with('/') {
+        let base = connection
+            .capabilities
+            .iter()
+            .find_map(|id| store.get_capability(id).ok().flatten())
+            .and_then(|cap| cap.http.map(|spec| spec.base_url))
+            .ok_or_else(|| GatewayError::Internal(format!("connection '{}' has no capability to read its host from", connection.id)))?;
+        let origin = reqwest::Url::parse(&base).map_err(|_| GatewayError::BadRequest(format!("connection '{}' has no valid base URL", connection.id)))?;
+        format!("{}{}", origin.origin().ascii_serialization(), oauth.token_url)
+    } else {
+        oauth.token_url.clone()
+    };
+    Ok(Some(ClientCredentialsEndpoint { token_url, scopes: oauth.scopes.clone(), token_auth: oauth.token_auth, accepts_token: oauth.accepts_token }))
+}
+
 /// Handler for `POST /v1/connections/:id/credential`. Seals the value under the connection's
 /// secret id (adding it if absent, rotating it if present). The value is never returned.
 ///
@@ -6135,8 +6173,22 @@ pub async fn set_connection_credential(
         connection.secret_id = slot;
         store.put_connection(connection.clone())?;
     }
-    let sealed = seal(Cipher::Aes256Gcm, vault_passphrase(), zeroize::Zeroizing::new(req.value).as_bytes())
-        .map_err(|e| GatewayError::Internal(format!("seal failed: {e}")))?;
+    let pasted = zeroize::Zeroizing::new(req.value);
+    let sealed = match client_credentials_endpoint(store.as_ref(), &connection)?.filter(|e| !e.accepts_token || pasted.contains(':')) {
+        Some(endpoint) => {
+            let grant = crate::oauth_connect::ClientCredentialsGrant {
+                provider: &connection.connector,
+                token_url: &endpoint.token_url,
+                scopes: &endpoint.scopes,
+                token_auth: endpoint.token_auth,
+            };
+            let minted = crate::oauth_connect::mint_client_credentials(state.service.http().as_ref(), grant, pasted.trim(), now_ms()).await?;
+            let bundle = crate::oauth_connect::to_sealed_json(&minted)?;
+            seal(Cipher::Aes256Gcm, vault_passphrase(), bundle.as_bytes())
+        }
+        None => seal(Cipher::Aes256Gcm, vault_passphrase(), pasted.as_bytes()),
+    }
+    .map_err(|e| GatewayError::Internal(format!("seal failed: {e}")))?;
 
     let _cp = state.service.control_plane_mutex().lock().await;
     let existing = store.get_secret(&connection.secret_id)?;
@@ -10632,6 +10684,12 @@ pub async fn start_connector_oauth(
     let oauth = preset.oauth.as_ref().ok_or_else(|| {
         GatewayError::BadRequest(format!("connector '{}' does not support OAuth", preset.id))
     })?;
+    if oauth.grant == crate::presets::OAuthGrant::ClientCredentials {
+        return Err(GatewayError::BadRequest(format!(
+            "connector '{}' has no consent screen: seal its client id and secret as client_id:client_secret with POST /v1/connections/{id}/credential",
+            preset.id
+        )));
+    }
     // An installed manifest's endpoints are read live here, so they are held to the hosts its install named: the token endpoint is sent the client secret and the code.
     if let Some(installed) = &installed {
         let named = installed.named_hosts();
@@ -10657,7 +10715,15 @@ pub async fn start_connector_oauth(
         return Err(GatewayError::BadRequest("client_id and client_secret are required".into()));
     }
     let redirect_uri = validate_redirect_uri(&req.redirect_uri)?;
-    let scopes = req.scopes.unwrap_or_else(|| oauth.scopes.clone());
+    let mut scopes = req.scopes.unwrap_or_else(|| oauth.scopes.clone());
+    // A scope can name the connection's own host, the only form Dataverse documents: <environment>/user_impersonation.
+    if scopes.iter().any(|s| s.contains("{host}")) {
+        let (base_url, _) = connection_pins(store.as_ref(), &id)?;
+        let host = base_url.as_deref().and_then(crate::connectors::shown_host).ok_or_else(|| GatewayError::BadRequest(format!("connection '{id}' has no host to name in its OAuth scope")))?;
+        for scope in &mut scopes {
+            *scope = scope.replace("{host}", &host);
+        }
+    }
 
     let state_token = crate::oauth_connect::random_token();
     let (verifier, challenge) = if oauth.pkce {
@@ -10668,8 +10734,9 @@ pub async fn start_connector_oauth(
         (None, None)
     };
 
-    let url = crate::oauth_connect::authorize_url(
+    let url = crate::oauth_connect::authorize_url_named(
         &oauth.authorize_url,
+        oauth.client_id_param.as_deref().unwrap_or("client_id"),
         &client_id,
         &redirect_uri,
         &scopes,
@@ -10694,6 +10761,7 @@ pub async fn start_connector_oauth(
             binding,
             token_auth: oauth.token_auth,
             refresh_grant: oauth.refresh_grant,
+            client_id_param: oauth.client_id_param.clone(),
         },
         now_ms(),
     );

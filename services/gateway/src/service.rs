@@ -6661,6 +6661,13 @@ impl EnforcementService {
         };
         self.with_secret(&cap.secret_id, |opened| async move {
             let mut scrub = credential_scrub(opened.bytes());
+            // Each half of a pair travels alone, so each must be recognized alone on the way back.
+            if matches!(cap.http.as_ref().map(|spec| &spec.auth), Some(connectors::AuthScheme::Pair { .. })) {
+                if let Some((first, second)) = std::str::from_utf8(opened.bytes()).ok().and_then(connectors::credential_pair) {
+                    scrub.add_secret(first.as_bytes());
+                    scrub.add_secret(second.as_bytes());
+                }
+            }
             // Best effort, before the next future is made: see clear_stack for what it does and does not reach.
             permaura_core::secret::clear_stack();
             let outcome = match prepared {
@@ -6931,7 +6938,7 @@ impl EnforcementService {
                     drop(opened);
                     permaura_core::secret::clear_stack();
                     let cred = self.fresh_oauth_credential(&cap.secret_id, cred).await?;
-                    connectors::build_request_for(connector, cap, params, cred.access_token.as_bytes())
+                    connectors::build_request_for(connector, &connectors::for_oauth_token(cap), params, cred.access_token.as_bytes())
                 }
                 None => {
                     let request = connectors::build_request_for(connector, cap, params, opened.bytes());
@@ -6981,7 +6988,7 @@ impl EnforcementService {
                 if let Some(refresh) = &cred.refresh_token {
                     scrub.add_secret(refresh.as_bytes());
                 }
-                connectors::build_request_for(connector, cap, params, cred.access_token.as_bytes())
+                connectors::build_request_for(connector, &connectors::for_oauth_token(cap), params, cred.access_token.as_bytes())
             }
             None => {
                 let request = connectors::build_request_for(connector, cap, params, opened.bytes());
